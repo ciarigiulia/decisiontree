@@ -39,7 +39,7 @@ data = df[df.columns[0:2]].values
 df2 = df
 '''
 
-X_train, X_test, y_train, y_test = train_test_split(df, y, test_size=0.25, random_state=1)
+X_train, X_test, y_train, y_test = train_test_split(df, y, test_size=0.05, random_state=1)
 
 # DATA BETWEEN 0-1
 scaler = MinMaxScaler()
