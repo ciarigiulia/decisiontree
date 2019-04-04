@@ -8,6 +8,7 @@ from sklearn.base import BaseEstimator
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
 
+print('ciao')
 # to use wine dataset
 df = pd.read_csv('wine.data.csv', header=None)
 y = df[0]-1
