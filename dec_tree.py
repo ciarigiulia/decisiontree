@@ -1,4 +1,5 @@
 from math import floor
+from math import ceil
 from time import time
 
 import numpy as np
@@ -7,57 +8,8 @@ from docplex.mp.model import Model
 from sklearn.base import BaseEstimator
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
-
-# to use wine dataset
-df = pd.read_csv('wine.data.csv', header=None)
-y = df[0]-1
-df = df[df.columns[1:]]
-data = df[df.columns[1:]].values
-df2 = df
-# to use fertility dataset
-'''
-df = pd.read_csv('fertility.csv', header=None)
-y=df[9]
-df=df[df.columns[0:9]]
-data= df[df.columns[0:9]].values
-df2=df
-
-for i in range(len(y)):
-    if y[i]=='N':
-        y[i]=0
-    else:
-        y[i]=1
-'''
-
-# to use prova dataset
-'''
-df = pd.read_csv('prova.csv', header=None)
-y = df[2]
-df = df[df.columns[0:2]]
-data = df[df.columns[0:2]].values
-df2 = df
-'''
-
-X_train, X_test, y_train, y_test = train_test_split(df, y, test_size=0.25, random_state=1)
-
-# DATA BETWEEN 0-1
-scaler = MinMaxScaler()
-df_scaled = scaler.fit(X_train)  # save object fitted only with train data
-df_scaled = scaler.transform(X_train)
-df = pd.DataFrame(df_scaled)  # scaled dataframe
-df2 = scaler.transform(X_train)
-df2 = pd.DataFrame(df2)
-
-df_test = scaler.transform(X_test)  # apply same transformation to test set
-for i in range(len(df_test)):
-    for j in range(len(df_test[0])):
-        if df_test[i][j] > 1:
-            df_test[i][j] = 1
-        elif df_test[i][j] < 0:
-            df_test[i][j] = 0
-df_test = pd.DataFrame(df_test)
-df_test2 = scaler.transform(X_test)
-df_test2 = pd.DataFrame(df_test2)
+from docplex.mp.solution import SolveSolution
+import pygraphviz as pgv
 
 class tree(BaseEstimator):
 
@@ -236,6 +188,8 @@ class tree(BaseEstimator):
 
         Nkt = mdl.continuous_var_matrix(len(self.classes), self.Tl, name='Nkt')  # points_in_leaf_%d_of_class_%d
 
+
+
         # CONSTRAINTS
 
         for le in range(len(self.Tl)):
@@ -286,10 +240,45 @@ class tree(BaseEstimator):
         for t in np.delete(self.Tb, 0):
             mdl.add_constraint(d[t] <= d[self.parent[t]])
 
+        #randa = [np.random.uniform(1 - 1e-1, 1 + 1e-1) for t in self.Tb]
+        #randL = [np.random.uniform(1 - 1e-1, 1 + 1e-1) for t in self.Tl]
+
         for i in range(0, len(self.Tl), 2):
             mdl.add_constraint(l[i] <= d[self.find_pt()[i + self.depth]])
 
+        # vincolo sul massimo numero di foglie associate alle classi
+        # mdl.add_constraint(mdl.sum(l[leaf] for leaf in range(len(self.Tl))) == len(self.classes))
+
+
+
+        # MIP START
+
+        m = SolveSolution(mdl)
+        bb = [2.335,1.32,0.355, 0.5, 0.7, 1.2, 2.3]
+
+        for t in self.Tb:
+            m.add_var_value('b_%d'%(t), bb[t])
+            m.add_var_value('d_%d'%(t),1)
+            for f in self.features:
+                if (t==0 and f==6) or(t==1 and f==9)or (t==2 and f==8):
+                    m.add_var_value('a%d_%d'%(t,f),1)
+                else:
+                    m.add_var_value('a%d_%d'%(t,f),0)
+        for leaf in self.Tl:
+            m.add_var_value('l_%d'%(leaf), 1)
+
+        m.add_var_value('c_2_3',1)
+        m.add_var_value('c_1_4', 1)
+        m.add_var_value('c_0_5', 1)
+        m.add_var_value('c_1_6', 1)
+        print(m.check_as_mip_start())
+        print(m)
+        mdl.add_mip_start(m)
+
+        # OBJECTIVE FUNCTION
         mdl.minimize(mdl.sum(L[le] for le in range(len(self.Tl))) + self.alpha * mdl.sum(d[t] for t in self.Tb))
+
+        # mdl.minimize(mdl.sum(L[le]*randL[le] for le in range(len(self.Tl))) + self.alpha * mdl.sum(d[t]*randa[t] for t in self.Tb))
         mdl.print_information()
         
         start = time()
@@ -299,16 +288,43 @@ class tree(BaseEstimator):
         mdl.solve(log_output=True)
         mdl.report()
         print(mdl.solve_details)
+        mdl.print_solution()
         # mdl.print_solution()
 
         fit_time = time() - start
         print('time to solve the model:', fit_time)
+
+        #GRAPH
+        g  = pgv.AGraph(directed=True) # initialize the graph
+
+        nodes = np.append(self.Tb, self.Tl)
+        for n in nodes: #the graph has a node for eache node of the tree
+            g.add_node(n)
+            if n != 0:
+                father = ceil(n / 2) - 1
+                g.add_edge(father, n)
+        for t in self.Tb:
+            #if mdl.solution.get_value('d_' + str(t))==0:
+                #g.get_node(t).attr['color']='red'
+            for f in range(len(self.features)):
+                if mdl.solution.get_value('a'+str(t)+'_'+str(f)) == 1:
+                    g.get_node(t).attr['label']= str('X[%d]'%(f)) + str('<=') + str('%.3f'%(mdl.solution.get_value('b_'+str(t))))
+        for leaf in self.Tl:
+            if mdl.solution.get_value('l_' + str(leaf))==0: # these leaves haven't got points
+                g.get_node(leaf).attr['color']='red'
+        for leaf in self.Tl:
+            s = []
+            for k in range(len(self.classes)):
+                s.append(round(mdl.solution.get_value('Nkt_' + str(k) + '_' + str(leaf))))
+            for k in range(len(self.classes)):
+                if mdl.solution.get_value('c_' + str(k) + '_' + str(leaf)) == 1:
+                    g.get_node(leaf).attr['label']= str(s) + '\\n' + 'class %d'%(k)
+        g.layout(prog='dot')
+        g.draw('/Users/giuliaciarimboli/Desktop/wine.jpeg')
+
         return mdl
 
     def fit(self, dataframe, dataframe2, y):
-
-        # OBJECTIVE FUNCTION
-
         # per calcolare il train error
         sol = self.model(dataframe, dataframe2, y)
 
@@ -337,10 +353,7 @@ class tree(BaseEstimator):
         return sol
 
     def test_model(self, dataframe, dataframe2, y):
-        self.eps_test = self.find_eps(dataframe2)
-        self.M1_test = self.find_M1(dataframe2)
-
-        err_test = min(self.eps_test)
+        err = min(self.eps)
 
         Num_points = len(dataframe)
         points = np.array(np.arange(0, len(dataframe)))  # array of point's indexes
@@ -360,8 +373,7 @@ class tree(BaseEstimator):
         for p in points:
             for le in range(len(self.Tl)):
                 for m in self.Al[le + self.floorTb]:
-
-                    mdl.add_constraint(np.dot(dataframe.loc[p] + self.eps_test - err_test*np.ones(len(self.features)), self.A[m]) + err_test <= self.B[m] + self.M1_test * (
+                    mdl.add_constraint(np.dot(dataframe.loc[p] + self.eps - err*np.ones(len(self.features)), self.A[m]) + err <= self.B[m] + self.M1 * (
                             1 - z[p, le + self.floorTb]))
 
         for p in points:
@@ -401,6 +413,59 @@ class tree(BaseEstimator):
         return mdl
 
 
-t = tree(depth=2, alpha=0.5, Nmin=1)
+
+# to use wine dataset
+
+df = pd.read_csv('wine.data.csv', header=None)
+y = df[0]-1
+df = df[df.columns[1:]]
+data = df[df.columns[1:]].values
+df2 = df
+# to use fertility dataset
+
+'''
+df = pd.read_csv('fertility.csv', header=None)
+y=df[9]
+df=df[df.columns[0:9]]
+data= df[df.columns[0:9]].values
+df2=df
+
+for i in range(len(y)):
+    if y[i]=='N':
+        y[i]=0
+    else:
+        y[i]=1
+'''
+
+# to use prova dataset
+'''
+df = pd.read_csv('prova.csv', header=None)
+y = df[2]
+df = df[df.columns[0:2]]
+data = df[df.columns[0:2]].values
+df2 = df
+                    '''
+X_train, X_test, y_train, y_test = train_test_split(df, y, test_size=0, random_state=1)
+
+# DATA BETWEEN 0-1
+scaler = MinMaxScaler()
+df_scaled = scaler.fit(X_train)  # save object fitted only with train data
+df_scaled = scaler.transform(X_train)
+df = pd.DataFrame(df_scaled)  # scaled dataframe
+df2 = scaler.transform(X_train)
+df2 = pd.DataFrame(df2)
+
+'''df_test = scaler.transform(X_test)  # apply same transformation to test set
+for i in range(len(df_test)):
+    for j in range(len(df_test[0])):
+        if df_test[i][j] > 1:
+            df_test[i][j] = 1
+        elif df_test[i][j] < 0:
+            df_test[i][j] = 0
+df_test = pd.DataFrame(df_test)
+df_test2 = scaler.transform(X_test)
+df_test2 = pd.DataFrame(df_test2)
+'''
+t = tree(depth=2, alpha=0.5, Nmin=10)
 f = t.fit(df, df2, y_train)
-predict = t.test_model(df_test, df_test2, y_test)
+#predict = t.test_model(df_test, df_test2, y_test)
