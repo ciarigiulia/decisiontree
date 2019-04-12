@@ -327,6 +327,7 @@ class optimaltree(BaseEstimator):
         #mdl.print_solution()
 
         fit_time = time() - start
+
         print('time to solve the model:', fit_time)
 
         #GRAPH
