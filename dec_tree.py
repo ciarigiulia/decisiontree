@@ -10,8 +10,9 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
 from docplex.mp.solution import SolveSolution
 import pygraphviz as pgv
+from sklearn.tree import DecisionTreeClassifier
 
-class tree(BaseEstimator):
+class optimaltree(BaseEstimator):
 
     def __init__(self, depth=2, alpha=0.0, Nmin=0):
 
@@ -145,7 +146,7 @@ class tree(BaseEstimator):
         self.Al, self.Ar = self.find_anc()
 
         err = min(self.eps)
-
+        np.random.seed(1)
         # initialize the model
 
         mdl = Model(name='OCT_train')
@@ -187,8 +188,6 @@ class tree(BaseEstimator):
         Nt = mdl.continuous_var_list(self.Tl, name='Nt')  # points_in_leaf
 
         Nkt = mdl.continuous_var_matrix(len(self.classes), self.Tl, name='Nkt')  # points_in_leaf_%d_of_class_%d
-
-
 
         # CONSTRAINTS
 
@@ -240,45 +239,82 @@ class tree(BaseEstimator):
         for t in np.delete(self.Tb, 0):
             mdl.add_constraint(d[t] <= d[self.parent[t]])
 
-        #randa = [np.random.uniform(1 - 1e-1, 1 + 1e-1) for t in self.Tb]
-        #randL = [np.random.uniform(1 - 1e-1, 1 + 1e-1) for t in self.Tl]
+        randa = [np.random.uniform(1 - 1e-1, 1 + 1e-1) for t in self.Tb]
+        randL = [np.random.uniform(1 - 1e-1, 1 + 1e-1) for t in self.Tl]
 
         for i in range(0, len(self.Tl), 2):
             mdl.add_constraint(l[i] <= d[self.find_pt()[i + self.depth]])
+
+        #vincolo giorgio
+        for k in range(len(self.classes)):
+            mdl.add_constraint(1 <= mdl.sum(c[k, le + self.floorTb] for le in range(len(self.Tl))))
 
         # vincolo sul massimo numero di foglie associate alle classi
         # mdl.add_constraint(mdl.sum(l[leaf] for leaf in range(len(self.Tl))) == len(self.classes))
 
 
 
-        # MIP START
+      # MIP START
+
+
+        clf = DecisionTreeClassifier(max_depth=self.depth, min_samples_leaf=self.Nmin, max_features=1, random_state=1)
+        clf.fit(dataframe, y)
+
+        # dot_data = tree.export_graphviz(clf, out_file=None, class_names=['0', '1', '2'])
+        # graph = graphviz.Source(dot_data)
+        # graph.render(filename="wine_full_sklearn_D3_", directory='/Users/giuliaciarimboli/Desktop/laurea magistrale/classification trees/graphs', view=True)
+
+        sk_features = clf.tree_.feature
+        sk_b = clf.tree_.threshold
+        sk_val = clf.tree_.value
+        sk_z = clf.apply(df)
+
+        nodes = np.append(self.Tb, self.Tl)
+
+        if self.depth == 2:
+            idx_sk = [0, 1, 4, 2, 3, 5, 6]
+        #   nodes =  [0,1,2,3,4,5,6]
+        elif self.depth == 3:
+            idx_sk = [0, 1, 8, 2, 5, 9, 12, 3, 4, 6, 7, 10, 11, 13, 14]
+        #   nodes  =[0,1,2,3,4,5, 6,7,8,9,10,11,12,13,14]
 
         m = SolveSolution(mdl)
-        bb = [2.335,1.32,0.355, 0.5, 0.7, 1.2, 2.3]
-
+        count = 0
+        j = -1
+        for node in idx_sk:
+            j += 1
+            if sk_features[j] >= 0:
+                i = list(idx_sk).index(
+                    j)  # prendo l'indice j-esimo della lista dei nodi di sklearn, equivalente al nodo oct
+                feat = sk_features[j]  # è la feature da prendere nell'i esimo nodo
+                m.add_var_value('a%d_%d' % (i, feat), 1)
+                m.add_var_value(('b_%d' % (i)), sk_b[j])
+                count += 1
         for t in self.Tb:
-            m.add_var_value('b_%d'%(t), bb[t])
-            m.add_var_value('d_%d'%(t),1)
-            for f in self.features:
-                if (t==0 and f==6) or(t==1 and f==9)or (t==2 and f==8):
-                    m.add_var_value('a%d_%d'%(t,f),1)
-                else:
-                    m.add_var_value('a%d_%d'%(t,f),0)
+            m.add_var_value(('d_%d' % (t)), 1)
         for leaf in self.Tl:
-            m.add_var_value('l_%d'%(leaf), 1)
+            m.add_var_value(('l_%d' % (leaf)), 1)
 
-        m.add_var_value('c_2_3',1)
-        m.add_var_value('c_1_4', 1)
-        m.add_var_value('c_0_5', 1)
-        m.add_var_value('c_1_6', 1)
-        print(m.check_as_mip_start())
-        print(m)
+        jj = -1
+        for node in idx_sk:
+            jj += 1
+            k = np.argmax(sk_val[jj][0])
+            num = np.sum(sk_val[jj][0])
+            ii = list(idx_sk).index(jj)
+            if ii in self.Tl:
+                m.add_var_value('c_%d_%d' % (k, ii), 1)
+                m.add_var_value('Nt_%d' % (ii), num)
+                for kl in self.classes:
+                    m.add_var_value('Nkt_%d_%d' % (kl, ii), sk_val[jj][0][kl])
+
+        for data in range(len(dataframe)):
+            foglia = list(idx_sk).index(sk_z[data])
+            m.add_var_value('z_%d_%d' % (data, foglia), 1)
         mdl.add_mip_start(m)
-
         # OBJECTIVE FUNCTION
         mdl.minimize(mdl.sum(L[le] for le in range(len(self.Tl))) + self.alpha * mdl.sum(d[t] for t in self.Tb))
 
-        # mdl.minimize(mdl.sum(L[le]*randL[le] for le in range(len(self.Tl))) + self.alpha * mdl.sum(d[t]*randa[t] for t in self.Tb))
+        #mdl.minimize(mdl.sum(L[le]*randL[le] for le in range(len(self.Tl))) + self.alpha * mdl.sum(d[t]*randa[t] for t in self.Tb))
         mdl.print_information()
         
         start = time()
@@ -288,14 +324,13 @@ class tree(BaseEstimator):
         mdl.solve(log_output=True)
         mdl.report()
         print(mdl.solve_details)
-        mdl.print_solution()
-        # mdl.print_solution()
+        #mdl.print_solution()
 
         fit_time = time() - start
         print('time to solve the model:', fit_time)
 
         #GRAPH
-        g  = pgv.AGraph(directed=True) # initialize the graph
+        '''g  = pgv.AGraph(directed=True) # initialize the graph
 
         nodes = np.append(self.Tb, self.Tl)
         for n in nodes: #the graph has a node for eache node of the tree
@@ -320,14 +355,15 @@ class tree(BaseEstimator):
                 if mdl.solution.get_value('c_' + str(k) + '_' + str(leaf)) == 1:
                     g.get_node(leaf).attr['label']= str(s) + '\\n' + 'class %d'%(k)
         g.layout(prog='dot')
-        g.draw('/Users/giuliaciarimboli/Desktop/wine.jpeg')
+        g.draw('/Users/giuliaciarimboli/Desktop/wine.jpeg')'''
 
         return mdl
 
     def fit(self, dataframe, dataframe2, y):
-        # per calcolare il train error
         sol = self.model(dataframe, dataframe2, y)
-
+        #ms = self.warm_start(dataframe, dataframe2, y)
+        #sol.add_mip_start(ms)
+        #sol.solve(log_output=True)
         train_error = 0
         for leaf in self.Tl:
             train_error += sol.solution.get_value('L_' + str(leaf))
@@ -383,6 +419,8 @@ class tree(BaseEstimator):
         for le in range(len(self.Tl)):
             for p in points:
                 mdl.add_constraint(z[p, le + self.floorTb] <= self.l_test[le])
+
+
 
         mdl.print_information()
 
@@ -464,8 +502,9 @@ for i in range(len(df_test)):
             df_test[i][j] = 0
 df_test = pd.DataFrame(df_test)
 df_test2 = scaler.transform(X_test)
-df_test2 = pd.DataFrame(df_test2)
-'''
-t = tree(depth=2, alpha=0.5, Nmin=10)
+df_test2 = pd.DataFrame(df_test2)'''
+
+t = optimaltree(depth=2, alpha=0.5, Nmin=10)
+#t.warm_start(df,df2,y_train)
 f = t.fit(df, df2, y_train)
 #predict = t.test_model(df_test, df_test2, y_test)
