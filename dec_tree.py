@@ -499,7 +499,6 @@ class optimaltree(BaseEstimator):
             train_error += sol.solution.get_value('L_' + str(leaf))
         train_error = train_error / self.M
         print('train_error:', train_error)
-
         # GRAPH
         '''g  = pgv.AGraph(directed=True) # initialize the graph
 
