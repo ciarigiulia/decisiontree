@@ -11,7 +11,8 @@ from sklearn.preprocessing import MinMaxScaler
 from docplex.mp.solution import SolveSolution
 import pygraphviz as pgv
 from sklearn.tree import DecisionTreeClassifier
-
+import graphviz
+from sklearn import tree
 class optimaltree(BaseEstimator):
 
     def __init__(self, depth=2, alpha=0.0, Nmin=0):
@@ -261,15 +262,16 @@ class optimaltree(BaseEstimator):
         clf = DecisionTreeClassifier(max_depth=self.depth, min_samples_leaf=self.Nmin, max_features=1, random_state=1)
         clf.fit(dataframe, y)
 
-        # dot_data = tree.export_graphviz(clf, out_file=None, class_names=['0', '1', '2'])
-        # graph = graphviz.Source(dot_data)
-        # graph.render(filename="wine_full_sklearn_D3_", directory='/Users/giuliaciarimboli/Desktop/laurea magistrale/classification trees/graphs', view=True)
+        dot_data = tree.export_graphviz(clf, out_file=None, class_names=['0', '1', '2'])
+        graph = graphviz.Source(dot_data)
+        graph.render(filename="thoraric", directory='/Users/giuliaciarimboli/Desktop/laurea magistrale/classification trees/graphs', view=True)
 
         sk_features = clf.tree_.feature
         sk_b = clf.tree_.threshold
         sk_val = clf.tree_.value
         sk_z = clf.apply(df)
-
+        print(sk_features)
+        print(sk_val)
         nodes = np.append(self.Tb, self.Tl)
 
         if self.depth == 2:
@@ -284,11 +286,10 @@ class optimaltree(BaseEstimator):
         m = SolveSolution(mdl)
         count = 0
         j = -1
-        for node in idx_sk:
+        for node in range(len(sk_features)):
             j += 1
             if sk_features[j] >= 0:
-                i = list(idx_sk).index(
-                    j)  # prendo l'indice j-esimo della lista dei nodi di sklearn, equivalente al nodo oct
+                i = list(idx_sk).index(j)  # prendo l'indice j-esimo della lista dei nodi di sklearn, equivalente al nodo oct
                 feat = sk_features[j]  # è la feature da prendere nell'i esimo nodo
                 m.add_var_value('a%d_%d' % (i, feat), 1)
                 m.add_var_value(('b_%d' % (i)), sk_b[j])
@@ -298,12 +299,12 @@ class optimaltree(BaseEstimator):
         for leaf in self.Tl:
             m.add_var_value(('l_%d' % (leaf)), 1)
 
-        jj = -1
-        for node in idx_sk:
-            jj += 1
+        jj = 0
+        for node in range(len(sk_features)):
             k = np.argmax(sk_val[jj][0])
             num = np.sum(sk_val[jj][0])
             ii = list(idx_sk).index(jj)
+            jj += 1
             if ii in self.Tl:
                 m.add_var_value('c_%d_%d' % (k, ii), 1)
                 m.add_var_value('Nt_%d' % (ii), num)
@@ -553,7 +554,7 @@ class optimaltree(BaseEstimator):
 
 
 # to use wine dataset
-
+'''
 df = pd.read_csv('wine.data.csv', header=None)
 y = df[0]-1
 df = df[df.columns[1:]]
@@ -562,14 +563,12 @@ df2 = df
 # to use fertility dataset'''
 
 
-'''#to use monk
-df = pd.read_csv('Monks.csv', header=None)
+#to use monk
+df = pd.read_csv('ThoraricSurgery.csv', header=None)
 y = df[0]
-print(y)
 df = df[df.columns[1:]]
 data = df[df.columns[1:]].values
 df2 = df
-print(df)'''
 '''
 df = pd.read_csv('fertility.csv', header=None)
 y=df[9]
@@ -601,6 +600,7 @@ df_scaled = scaler.transform(X_train)
 df = pd.DataFrame(df_scaled)  # scaled dataframe
 df2 = scaler.transform(X_train)
 df2 = pd.DataFrame(df2)
+print(df)
 
 '''df_test = scaler.transform(X_test)  # apply same transformation to test set
 for i in range(len(df_test)):
@@ -613,7 +613,7 @@ df_test = pd.DataFrame(df_test)
 df_test2 = scaler.transform(X_test)
 df_test2 = pd.DataFrame(df_test2)'''
 
-d = 1
+d = 2
 a = 0.5
 N = 10
 t = optimaltree(depth= d, alpha=a, Nmin=N)
@@ -621,8 +621,8 @@ t = optimaltree(depth= d, alpha=a, Nmin=N)
 f2 = t.fit_with_cart(df, df2, y_train)
 
 #to fit with oct with depth=depth-1 as warm start
-warm = optimaltree(depth=d-1,alpha=a, Nmin=N)
+'''warm = optimaltree(depth=d-1,alpha=a, Nmin=N)
 ws_ = warm.warm_start_oct(df, df2, y_train)
-f = t.fit_with_oct_mip_start(df, df2, y_train, ws_)
+f = t.fit_with_oct_mip_start(df, df2, y_train, ws_)'''
 
 # predict = t.test_model(df_test, df_test2, y_test)
