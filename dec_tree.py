@@ -145,7 +145,6 @@ class optimaltree(BaseEstimator):
 
         self.parent = self.find_pt()
         self.Al, self.Ar = self.find_anc()
-
         err = min(self.eps)
         np.random.seed(1)
         # initialize the model
@@ -259,7 +258,7 @@ class optimaltree(BaseEstimator):
       # MIP START
 
 
-        clf = DecisionTreeClassifier(max_depth=self.depth, min_samples_leaf=self.Nmin, max_features=1, random_state=1)
+        clf = DecisionTreeClassifier(max_depth=self.depth, min_samples_leaf=self.Nmin, max_features=1, random_state=1, min_impurity_decrease=1e-16)
         clf.fit(dataframe, y)
 
         dot_data = tree.export_graphviz(clf, out_file=None, class_names=['0', '1', '2'])
@@ -272,6 +271,7 @@ class optimaltree(BaseEstimator):
         sk_z = clf.apply(df)
         print(sk_features)
         print(sk_val)
+        print(clf.tree_.children_left)
         nodes = np.append(self.Tb, self.Tl)
 
         if self.depth == 2:
@@ -290,21 +290,26 @@ class optimaltree(BaseEstimator):
             j += 1
             if sk_features[j] >= 0:
                 i = list(idx_sk).index(j)  # prendo l'indice j-esimo della lista dei nodi di sklearn, equivalente al nodo oct
+                print(i)
                 feat = sk_features[j]  # è la feature da prendere nell'i esimo nodo
                 m.add_var_value('a%d_%d' % (i, feat), 1)
                 m.add_var_value(('b_%d' % (i)), sk_b[j])
                 count += 1
+
         for t in self.Tb:
-            m.add_var_value(('d_%d' % (t)), 1)
+            if sk_features[t] >= 0:
+                i = list(idx_sk).index(t)
+                print(i)
+                m.add_var_value(('d_%d' % (i)), 1)
         for leaf in self.Tl:
             m.add_var_value(('l_%d' % (leaf)), 1)
 
-        jj = 0
-        for node in range(len(sk_features)):
+        jj = -1
+        for node in idx_sk:
+            jj += 1
             k = np.argmax(sk_val[jj][0])
             num = np.sum(sk_val[jj][0])
             ii = list(idx_sk).index(jj)
-            jj += 1
             if ii in self.Tl:
                 m.add_var_value('c_%d_%d' % (k, ii), 1)
                 m.add_var_value('Nt_%d' % (ii), num)
@@ -314,14 +319,16 @@ class optimaltree(BaseEstimator):
         for data in range(len(dataframe)):
             foglia = list(idx_sk).index(sk_z[data])
             m.add_var_value('z_%d_%d' % (data, foglia), 1)
+
+        print(m)
         mdl.add_mip_start(m)
 
 
         # OBJECTIVE FUNCTION
-        #mdl.minimize(mdl.sum(L[le] for le in range(len(self.Tl))) + self.alpha * mdl.sum(d[t] for t in self.Tb))
+        mdl.minimize(mdl.sum(L[le] for le in range(len(self.Tl))) + self.alpha * mdl.sum(d[t] for t in self.Tb))
 
         
-        mdl.minimize(mdl.sum(L[le]*randL[le] for le in range(len(self.Tl))) + self.alpha * mdl.sum(d[t]*randa[t] for t in self.Tb))
+        # mdl.minimize(mdl.sum(L[le]*randL[le] for le in range(len(self.Tl))) + self.alpha * mdl.sum(d[t]*randa[t] for t in self.Tb))
         mdl.print_information()
 
         return mdl
@@ -360,7 +367,7 @@ class optimaltree(BaseEstimator):
             j+=2
         for node in self.Tl:
             c_list = []
-            for k in self.classes:
+            for k in range(len(self.classes)):
                 c_list.insert(node, s.get_value('c_%d_%d'%(k, node)))
             c_oct.append(c_list)
 
@@ -375,7 +382,7 @@ class optimaltree(BaseEstimator):
             Nt_oct.insert(i, s.get_value('Nt_%d'%(leaf)))
             i+=1
             Nkt_list = []
-            for k in self.classes:
+            for k in range(len(self.classes)):
                 Nkt_list.insert(k, s.get_value('Nkt_%d_%d'%(k,leaf)))
             Nkt_oct.append([0]*len(self.classes))
             Nkt_oct.append(Nkt_list)
@@ -554,7 +561,7 @@ class optimaltree(BaseEstimator):
 
 
 # to use wine dataset
-'''
+
 df = pd.read_csv('wine.data.csv', header=None)
 y = df[0]-1
 df = df[df.columns[1:]]
@@ -564,11 +571,12 @@ df2 = df
 
 
 #to use monk
-df = pd.read_csv('ThoraricSurgery.csv', header=None)
+'''df = pd.read_csv('ThoraricSurgery.csv', header=None)
 y = df[0]
 df = df[df.columns[1:]]
 data = df[df.columns[1:]].values
 df2 = df
+print(y)'''
 '''
 df = pd.read_csv('fertility.csv', header=None)
 y=df[9]
@@ -600,7 +608,6 @@ df_scaled = scaler.transform(X_train)
 df = pd.DataFrame(df_scaled)  # scaled dataframe
 df2 = scaler.transform(X_train)
 df2 = pd.DataFrame(df2)
-print(df)
 
 '''df_test = scaler.transform(X_test)  # apply same transformation to test set
 for i in range(len(df_test)):
@@ -621,8 +628,8 @@ t = optimaltree(depth= d, alpha=a, Nmin=N)
 f2 = t.fit_with_cart(df, df2, y_train)
 
 #to fit with oct with depth=depth-1 as warm start
-'''warm = optimaltree(depth=d-1,alpha=a, Nmin=N)
-ws_ = warm.warm_start_oct(df, df2, y_train)
-f = t.fit_with_oct_mip_start(df, df2, y_train, ws_)'''
+#warm = optimaltree(depth=d-1,alpha=a, Nmin=N)
+#ws_ = warm.warm_start_oct(df, df2, y_train)
+#f = t.fit_with_oct_mip_start(df, df2, y_train, ws_)
 
 # predict = t.test_model(df_test, df_test2, y_test)
