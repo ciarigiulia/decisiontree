@@ -51,12 +51,12 @@ class optimaltree(BaseEstimator):
 
         T = pow(2, (self.depth + 1)) - 1  # nodes number
         self.floorTb = int(floor(T / 2))  # number of branch nodes
-        self.Tb = np.arange(0, self.floorTb)  # range branch nodes
-        self.Tl = np.arange(self.floorTb, T)  # range leaf nodes
+        Tb = np.arange(0, self.floorTb)  # range branch nodes
+        Tl = np.arange(self.floorTb, T)  # range leaf nodes
 
-        self.classes = np.unique(y.values)  # possible labels of classification
-        self.features = dataframe.columns.values  # array of features
-        return self.Tb, self.Tl, self.classes, self.features
+        classes = np.unique(y.values)  # possible labels of classification
+        features = dataframe.columns.values  # array of features
+        return Tb, Tl, classes, features
 
     def find_eps(self, dataframe2):
         eps = np.zeros(len(dataframe2.columns))
@@ -149,8 +149,8 @@ class optimaltree(BaseEstimator):
         np.random.seed(1)
         # initialize the model
 
-        mdl = Model(name='OCT_train')
-
+        mdl = Model()
+        mdl.clear()
         points = np.array(np.arange(0, len(dataframe)))  # array of point's indexes
         Num_points = len(dataframe)  # number of points
 
@@ -168,7 +168,7 @@ class optimaltree(BaseEstimator):
         # for each branch node associate a feature, 1 if in node t I take feature f
         a = []
         for t in self.Tb:
-            a.append(mdl.binary_var_list(len(self.features), ub=1, lb=0, name='a%d' % (t)))  # 'feature_in_node%d'%(t)
+            a.append(mdl.binary_var_list(len(self.features), name='a%d' % (t)))  # 'feature_in_node%d'%(t)
 
         # for each branch node associate a variable
         b = mdl.continuous_var_list(self.Tb, lb=0, name='b')  # 'hyperplane_coefficient'
@@ -246,18 +246,19 @@ class optimaltree(BaseEstimator):
             mdl.add_constraint(l[i] <= d[self.find_pt()[i + self.depth]])
 
         #vincolo giorgio
-        for k in range(len(self.classes)):
-            mdl.add_constraint(1 <= mdl.sum(c[k, le + self.floorTb] for le in range(len(self.Tl))))
+        if len(self.classes) <= len(self.Tl):
+             for k in range(len(self.classes)):
+                mdl.add_constraint(1 <= mdl.sum(c[k, le + self.floorTb] for le in range(len(self.Tl))))
 
         # vincolo sul massimo numero di foglie associate alle classi
-        # mdl.add_constraint(mdl.sum(l[leaf] for leaf in range(len(self.Tl))) == len(self.classes))
-
+        #mdl.add_constraint(mdl.sum(l[leaf] for leaf in range(len(self.Tl))) == len(self.classes)) #vincolo prof
+        #mdl.add_constraint(mdl.sum(l[leaf] for leaf in range(len(self.Tl))) == len(self.Tl)) # questo è utile se il numero di classi supera il numero di foglie
 
 
       # MIP START
 
 
-        clf = DecisionTreeClassifier(max_depth=self.depth, min_samples_leaf=self.Nmin, max_features=1, random_state=1)
+        '''clf = DecisionTreeClassifier(max_depth=self.depth, min_samples_leaf=self.Nmin, max_features=1, random_state=1)
         clf.fit(dataframe, y)
 
         # dot_data = tree.export_graphviz(clf, out_file=None, class_names=['0', '1', '2'])
@@ -274,6 +275,8 @@ class optimaltree(BaseEstimator):
         if self.depth == 2:
             idx_sk = [0, 1, 4, 2, 3, 5, 6]
         #   nodes =  [0,1,2,3,4,5,6]
+        elif self.depth ==1:
+            idx_sk = [0, 1, 2]
         elif self.depth == 3:
             idx_sk = [0, 1, 8, 2, 5, 9, 12, 3, 4, 6, 7, 10, 11, 13, 14]
         #   nodes  =[0,1,2,3,4,5, 6,7,8,9,10,11,12,13,14]
@@ -304,33 +307,200 @@ class optimaltree(BaseEstimator):
             if ii in self.Tl:
                 m.add_var_value('c_%d_%d' % (k, ii), 1)
                 m.add_var_value('Nt_%d' % (ii), num)
-                for kl in self.classes:
+                for kl in range(len(self.classes)):
                     m.add_var_value('Nkt_%d_%d' % (kl, ii), sk_val[jj][0][kl])
 
         for data in range(len(dataframe)):
             foglia = list(idx_sk).index(sk_z[data])
             m.add_var_value('z_%d_%d' % (data, foglia), 1)
-        mdl.add_mip_start(m)
+        mdl.add_mip_start(m)'''
+
+
         # OBJECTIVE FUNCTION
         mdl.minimize(mdl.sum(L[le] for le in range(len(self.Tl))) + self.alpha * mdl.sum(d[t] for t in self.Tb))
 
+        
         #mdl.minimize(mdl.sum(L[le]*randL[le] for le in range(len(self.Tl))) + self.alpha * mdl.sum(d[t]*randa[t] for t in self.Tb))
         mdl.print_information()
-        
-        start = time()
 
+        return mdl
+
+    def warm_start_cart(self,dataframe, dataframe2, y):
+        clf = DecisionTreeClassifier(max_depth=self.depth, min_samples_leaf=self.Nmin, max_features=1, random_state=1)
+        clf.fit(dataframe, y)
+
+        # dot_data = tree.export_graphviz(clf, out_file=None, class_names=['0', '1', '2'])
+        # graph = graphviz.Source(dot_data)
+        # graph.render(filename="wine_full_sklearn_D3_", directory='/Users/giuliaciarimboli/Desktop/laurea magistrale/classification trees/graphs', view=True)
+
+        sk_features = clf.tree_.feature
+        sk_b = clf.tree_.threshold
+        sk_val = clf.tree_.value
+        sk_z = clf.apply(df)
+
+        return sk_features, sk_b, sk_val, sk_z
+
+    def warm_start_oct(self, dataframe, dataframe2, y):
+        #mod = self.model(dataframe, dataframe2, y)
+        #s = mod.solve(log_output=True)
+
+        s = self.fit_with_cart(dataframe, dataframe2, y) #così per trovare la soluzione oct utilizza cart come mip start
+        s = SolveSolution(s)
+        a_oct=[]*len(self.features)
+        b_oct = []
+        d_oct = []
+        l_oct = []
+        c_oct = []*len(self.classes)
+        z_oct = []
+        Nt_oct =[]
+        Nkt_oct = []
+
+        for t in self.Tb: # inserisce valori noti
+            a_list=[]
+            b_oct.insert(t,s.get_value('b_%d'%(t)))
+            d_oct.insert(t, s.get_value('d_%d'%(t)))
+            for f in self.features:
+                a_list.insert(f,s.get_value('a%d_%d' % (t, f)))
+            a_oct.append(a_list)
+
+        for node in range(len(self.Tl)*2): # inserisce valori in più
+            a_oct.append([0]*len(self.features))
+            b_oct.insert(self.Tl[-1]+node, 0)
+            d_oct.insert(self.Tl[-1]+node, 0)
+        j=0
+        for node in self.Tl: # inserisce valori noti e non
+            l_oct.insert(j, 0)
+            l_oct.insert(j+1, s.get_value('l_%d'%(node)))
+            j+=2
+        for node in self.Tl:
+            c_list = []
+            for k in self.classes:
+                c_list.insert(node, s.get_value('c_%d_%d'%(k, node)))
+            c_oct.append(c_list)
+        for point in range(len(dataframe)):
+            for leaf in self.Tl:
+                if s.get_value('z_%d_%d'%(point,leaf)) == 1:
+                    z_oct.insert(point, leaf)
+        i=0
+        for leaf in self.Tl:
+            Nt_oct.insert(i, 0)
+            i+=1
+            Nt_oct.insert(i, s.get_value('Nt_%d'%(leaf)))
+            i+=1
+            Nkt_list = []
+            for k in self.classes:
+                Nkt_list.insert(k, s.get_value('Nkt_%d_%d'%(k,leaf)))
+            Nkt_oct.append([0]*len(self.classes))
+            Nkt_oct.append(Nkt_list)
+
+        return a_oct, b_oct, d_oct,l_oct, c_oct, z_oct, Nt_oct, Nkt_oct
+
+    def fit_with_cart(self,dataframe, dataframe2, y):
+
+        sol = self.model(dataframe, dataframe2, y)
+        sk_features, sk_b, sk_val, sk_z = self.warm_start_cart(dataframe, dataframe2, y)
+
+        if self.depth == 2:
+            idx_sk = [0, 1, 4, 2, 3, 5, 6]
+        #   nodes =  [0,1,2,3,4,5,6]
+        elif self.depth == 1:
+            idx_sk = [0, 1, 2]
+        elif self.depth == 3:
+            idx_sk = [0, 1, 8, 2, 5, 9, 12, 3, 4, 6, 7, 10, 11, 13, 14]
+        #   nodes  =[0,1,2,3,4,5, 6,7,8,9,10,11,12,13,14]
+
+        m = SolveSolution(sol)
+
+        count = 0
+        j = -1
+        for node in idx_sk:
+            j += 1
+            if sk_features[j] >= 0:
+                i = list(idx_sk).index(
+                    j)  # prendo l'indice j-esimo della lista dei nodi di sklearn, equivalente al nodo oct
+                feat = sk_features[j]  # è la feature da prendere nell'i esimo nodo
+                m.add_var_value('a%d_%d' % (i, feat), 1)
+                m.add_var_value(('b_%d' % (i)), sk_b[j])
+                count += 1
+        for t in self.Tb:
+            m.add_var_value(('d_%d' % (t)), 1)
+        for leaf in self.Tl:
+            m.add_var_value(('l_%d' % (leaf)), 1)
+
+        jj = -1
+        for node in idx_sk:
+            jj += 1
+            k = np.argmax(sk_val[jj][0])
+            num = np.sum(sk_val[jj][0])
+            ii = list(idx_sk).index(jj)
+            if ii in self.Tl:
+                m.add_var_value('c_%d_%d' % (k, ii), 1)
+                m.add_var_value('Nt_%d' % (ii), num)
+                for kl in range(len(self.classes)):
+                    m.add_var_value('Nkt_%d_%d' % (kl, ii), sk_val[jj][0][kl])
+
+        for data in range(len(dataframe)):
+            foglia = list(idx_sk).index(sk_z[data])
+            m.add_var_value('z_%d_%d' % (data, foglia), 1)
+
+        sol.add_mip_start(m)
+        sol.solve(log_output=True)
+
+        train_error = 0
+        for leaf in self.Tl:
+            train_error += sol.solution.get_value('L_' + str(leaf))
+        train_error = train_error / self.M
+        print('train_error:', train_error)
+
+        return sol
+
+    def fit_with_oct_mip_start(self, dataframe, dataframe2, y, warm_start):
+
+        sol = self.model(dataframe, dataframe2, y)
+        s = SolveSolution(sol)
+        i=0
+        for t in self.Tb:
+            s.add_var_value('b_%d'%(t), warm_start[1][t])
+            s.add_var_value('d_%d'%(t), warm_start[2][t])
+            for f in self.features:
+                s.add_var_value('a%d_%d' % (t, f), warm_start[0][t][f])
+        for leaf in self.Tl:
+            s.add_var_value(('l_%d'%(leaf)), warm_start[3][i])
+            i+=1
+        l=0 # indice
+        for leaf in self.Tl:
+            if leaf%2==0: # solo le foglie di destra hanno una classe
+                for k in range(len(self.classes)):
+                    s.add_var_value('c_%d_%d'%(k,leaf), warm_start[4][l][k])
+                l+=1
+        for point in range(len(dataframe)):
+            ex_leaf = warm_start[5][point]
+            son_right = 2*ex_leaf + 2
+            s.add_var_value('z_%d_%d'%(point, son_right), 1)
+        i=0
+        j=0
+        for leaf in self.Tl:
+            s.add_var_value('Nt_%d'%(leaf), warm_start[6][i])
+            i+=1
+            for k in range(len(self.classes)):
+                print(j,k)
+                s.add_var_value('Nkt_%d_%d'%(k,leaf), warm_start[7][j][k])
+
+            j+=1
+
+        sol.add_mip_start(s)
         # mdl.set_time_limit(600)
         # mdl.parameters.mip.tolerances.mipgap(0.1)
-        mdl.solve(log_output=True)
-        mdl.report()
-        print(mdl.solve_details)
-        #mdl.print_solution()
+        sol.solve(log_output=True)
 
-        fit_time = time() - start
+        #sol.print_solution()
+        train_error = 0
+        for leaf in self.Tl:
+            train_error += sol.solution.get_value('L_' + str(leaf))
+        train_error = train_error / self.M
+        print('train_error:', train_error)
 
-        print('time to solve the model:', fit_time)
-
-        #GRAPH
+        # GRAPH
         '''g  = pgv.AGraph(directed=True) # initialize the graph
 
         nodes = np.append(self.Tb, self.Tl)
@@ -343,33 +513,20 @@ class optimaltree(BaseEstimator):
             #if mdl.solution.get_value('d_' + str(t))==0:
                 #g.get_node(t).attr['color']='red'
             for f in range(len(self.features)):
-                if mdl.solution.get_value('a'+str(t)+'_'+str(f)) == 1:
-                    g.get_node(t).attr['label']= str('X[%d]'%(f)) + str('<=') + str('%.3f'%(mdl.solution.get_value('b_'+str(t))))
+                if sol.solution.get_value('a'+str(t)+'_'+str(f)) == 1:
+                    g.get_node(t).attr['label']= str('X[%d]'%(f)) + str('<=') + str('%.3f'%(sol.solution.get_value('b_'+str(t))))
         for leaf in self.Tl:
-            if mdl.solution.get_value('l_' + str(leaf))==0: # these leaves haven't got points
+            if sol.solution.get_value('l_' + str(leaf))==0: # these leaves haven't got points
                 g.get_node(leaf).attr['color']='red'
         for leaf in self.Tl:
             s = []
             for k in range(len(self.classes)):
-                s.append(round(mdl.solution.get_value('Nkt_' + str(k) + '_' + str(leaf))))
+                s.append(round(sol.solution.get_value('Nkt_' + str(k) + '_' + str(leaf))))
             for k in range(len(self.classes)):
-                if mdl.solution.get_value('c_' + str(k) + '_' + str(leaf)) == 1:
+                if sol.solution.get_value('c_' + str(k) + '_' + str(leaf)) == 1:
                     g.get_node(leaf).attr['label']= str(s) + '\\n' + 'class %d'%(k)
         g.layout(prog='dot')
         g.draw('/Users/giuliaciarimboli/Desktop/wine.jpeg')'''
-
-        return mdl
-
-    def fit(self, dataframe, dataframe2, y):
-        sol = self.model(dataframe, dataframe2, y)
-        #ms = self.warm_start(dataframe, dataframe2, y)
-        #sol.add_mip_start(ms)
-        #sol.solve(log_output=True)
-        train_error = 0
-        for leaf in self.Tl:
-            train_error += sol.solution.get_value('L_' + str(leaf))
-        train_error = train_error / self.M
-        print('train_error:', train_error)
 
         for t in self.Tb:
             self.B.append(sol.solution.get_value('b_' + str(t)))
@@ -477,13 +634,13 @@ for i in range(len(y)):
 '''
 
 # to use prova dataset
-'''
-df = pd.read_csv('prova.csv', header=None)
+
+'''df = pd.read_csv('prova.csv', header=None)
 y = df[2]
 df = df[df.columns[0:2]]
 data = df[df.columns[0:2]].values
-df2 = df
-                    '''
+df2 = df'''
+
 X_train, X_test, y_train, y_test = train_test_split(df, y, test_size=0, random_state=1)
 
 # DATA BETWEEN 0-1
@@ -505,7 +662,16 @@ df_test = pd.DataFrame(df_test)
 df_test2 = scaler.transform(X_test)
 df_test2 = pd.DataFrame(df_test2)'''
 
-t = optimaltree(depth=2, alpha=0.5, Nmin=10)
-#t.warm_start(df,df2,y_train)
-f = t.fit(df, df2, y_train)
-#predict = t.test_model(df_test, df_test2, y_test)
+d = 2
+a = 0.5
+N = 10
+t = optimaltree(depth= d, alpha=a, Nmin=N)
+# to fit with cart as warm start
+f2 = t.fit_with_cart(df, df2, y_train)
+
+# to fit with oct with depth=depth-1 as warm start
+# warm = optimaltree(depth=d-1,alpha=a, Nmin=N)
+# ws_ = warm.warm_start_oct(df, df2, y_train)
+# f = t.fit_with_oct_mip_start(df, df2, y_train, ws_)
+
+# predict = t.test_model(df_test, df_test2, y_test)

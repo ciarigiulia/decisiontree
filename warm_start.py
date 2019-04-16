@@ -22,7 +22,7 @@ df_scaled = scaler.transform(X_train)
 df = pd.DataFrame(df_scaled)  # scaled dataframe
 
 # construct the tree with sklearn
-depth = 3
+depth = 2
 clf = DecisionTreeClassifier(max_depth=depth, min_samples_leaf=10, max_features=1, random_state=1)
 f = clf.fit(df, y_train)
 
@@ -66,8 +66,7 @@ L = mdl.continuous_var_list(Tl, lb=0, name='L')  # loss_in_leaf
 
 Nt = mdl.continuous_var_list(Tl, name='Nt')  # points_in_leaf
 
-Nkt = mdl.continuous_var_matrix(len(classes), Tl, name='Nkt')  # points_in_leaf_%d_of_class_%d
-
+Nkt = mdl.continuous_var_matrix(len(classes)+1, Tl, name='Nkt')  # points_in_leaf_%d_of_class_%d
 if depth==2:
     idx_sk = [0,1,4,2,3,5,6]
 #   nodes =  [0,1,2,3,4,5,6]
@@ -100,12 +99,13 @@ for node in idx_sk:
     if ii in Tl:
         m.add_var_value('c_%d_%d'%(k,ii), 1)
         m.add_var_value('Nt_%d'%(ii), num)
-        for kl in classes:
+        for kl in range(len(classes)):
             m.add_var_value('Nkt_%d_%d'%(kl,ii), sk_val[jj][0][kl])
-            print(sk_val[jj][0][kl])
 for data in range(Num_points):
     foglia = list(idx_sk).index(sk_z[data])
     m.add_var_value('z_%d_%d'%(data,foglia), 1)
+
+
 for i in Tb:
     for f in features:
         if m.get_value('a%d_%d'%(i,f))==1:
@@ -113,8 +113,11 @@ for i in Tb:
 for i in Tb:
     print('il valore di b nel nodo %d è pari a:'%(i),m.get_value('b_%d'%(i)))
 for leaf in Tl:
-    for kl in classes:
-        print(m.get_value('Nkt_%d_%d'%(kl,leaf)))
+    for kl in range(len(classes)):
+        print(kl, leaf, m.get_value('Nkt_%d_%d'%(kl,leaf)))
+
+for leaf in Tl:
+    for kl in range(len(classes)):
         if m.get_value(('c_%d_%d'%(kl,leaf)))==1:
              print('la classe nella foglia %d è la %d'%(leaf,kl))
 for da in range(Num_points):
@@ -126,3 +129,4 @@ for da in range(Num_points):
 for leaf in Tl:
     print('nella foglia %d ci sono:'%(leaf),m.get_value('Nt_%d'%(leaf)), 'dati')
 mdl.print_information()
+print(m)

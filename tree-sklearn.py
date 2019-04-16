@@ -5,10 +5,10 @@ from sklearn.preprocessing import MinMaxScaler
 from sklearn import tree
 import graphviz
 
-df = pd.read_csv('wine.data.csv', header=None)
-clf = DecisionTreeClassifier(max_depth=3, min_samples_leaf=10, max_features=1, random_state=1)
-y = df[0]-1
-df = df[df.columns[1:]]
+df = pd.read_csv('prova.csv', header=None)
+clf = DecisionTreeClassifier(max_depth=3, min_samples_leaf=1, max_features=1, random_state=1)
+y = df[2]
+df = df[df.columns[0:2]]
 X_train, X_test, y_train, y_test = train_test_split(df, y, test_size=0, random_state=1)
 
 scaler = MinMaxScaler()
@@ -62,8 +62,8 @@ print(children_right)
 print(feature)
 print(threshold)
 
-#dot_data = tree.export_graphviz(clf, out_file=None, class_names=['0', '1', '2'])
-#graph = graphviz.Source(dot_data)
-#graph.render(filename="wine_full_sklearn_D3", directory='/Users/giuliaciarimboli/Desktop/laurea magistrale/classification trees/graphs', view=True)
+dot_data = tree.export_graphviz(clf, out_file=None)
+graph = graphviz.Source(dot_data)
+graph.render(filename="prova", directory='/Users/giuliaciarimboli/Desktop/laurea magistrale/classification trees/graphs', view=True)
 
 
