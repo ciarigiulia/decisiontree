@@ -4,11 +4,11 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
 from sklearn import tree
 import graphviz
-
-df = pd.read_csv('prova.csv', header=None)
-clf = DecisionTreeClassifier(max_depth=3, min_samples_leaf=1, max_features=1, random_state=1)
-y = df[2]
-df = df[df.columns[0:2]]
+import numpy as np
+df = pd.read_csv('ThoraricSurgery.csv', header=None)
+clf = DecisionTreeClassifier(max_depth=2, min_samples_leaf=10, max_features=1, random_state=1)
+y = df[0]
+df = df[df.columns[1:]]
 X_train, X_test, y_train, y_test = train_test_split(df, y, test_size=0, random_state=1)
 
 scaler = MinMaxScaler()
@@ -65,5 +65,22 @@ print(threshold)
 dot_data = tree.export_graphviz(clf, out_file=None)
 graph = graphviz.Source(dot_data)
 graph.render(filename="prova", directory='/Users/giuliaciarimboli/Desktop/laurea magistrale/classification trees/graphs', view=True)
-
-
+print(clf.tree_.children_left)
+print(clf.tree_.children_right)
+idx=[0]
+j=1
+left = clf.tree_.children_left
+right = clf.tree_.children_right
+for i in range(len(clf.tree_.children_left)):
+    print('i',i)
+    print(idx)
+    if idx[i]>=0:
+        node = idx[i]
+        print(node)
+    if clf.tree_.children_left[node]>0:
+        idx.insert(j, clf.tree_.children_left[node])
+        j+=1
+    if clf.tree_.children_right[node]>0:
+        idx.insert(j, clf.tree_.children_right[node])
+        j+=1
+print(idx)

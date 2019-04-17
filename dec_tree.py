@@ -258,7 +258,7 @@ class optimaltree(BaseEstimator):
       # MIP START
 
 
-        clf = DecisionTreeClassifier(max_depth=self.depth, min_samples_leaf=self.Nmin, max_features=1, random_state=1, min_impurity_decrease=1e-16)
+        clf = DecisionTreeClassifier(max_depth=self.depth, min_samples_leaf=self.Nmin, max_features=1, random_state=1, min_impurity_decrease=0)
         clf.fit(dataframe, y)
 
         dot_data = tree.export_graphviz(clf, out_file=None, class_names=['0', '1', '2'])
@@ -274,14 +274,22 @@ class optimaltree(BaseEstimator):
         print(clf.tree_.children_left)
         nodes = np.append(self.Tb, self.Tl)
 
-        if self.depth == 2:
-            idx_sk = [0, 1, 4, 2, 3, 5, 6]
-        #   nodes =  [0,1,2,3,4,5,6]
-        elif self.depth ==1:
-            idx_sk = [0, 1, 2]
-        elif self.depth == 3:
-            idx_sk = [0, 1, 8, 2, 5, 9, 12, 3, 4, 6, 7, 10, 11, 13, 14]
-        #   nodes  =[0,1,2,3,4,5, 6,7,8,9,10,11,12,13,14]
+        idx = [0]
+        j = 1
+        left = clf.tree_.children_left
+        right = clf.tree_.children_right
+        for i in range(len(clf.tree_.children_left)):
+            print('i', i)
+            print(idx)
+            if idx[i] >= 0:
+                node = idx[i]
+                print(node)
+            if clf.tree_.children_left[node] > 0:
+                idx.insert(j, clf.tree_.children_left[node])
+                j += 1
+            if clf.tree_.children_right[node] > 0:
+                idx.insert(j, clf.tree_.children_right[node])
+                j += 1
 
         m = SolveSolution(mdl)
         count = 0
@@ -289,7 +297,7 @@ class optimaltree(BaseEstimator):
         for node in range(len(sk_features)):
             j += 1
             if sk_features[j] >= 0:
-                i = list(idx_sk).index(j)  # prendo l'indice j-esimo della lista dei nodi di sklearn, equivalente al nodo oct
+                i = list(idx).index(j)  # prendo l'indice j-esimo della lista dei nodi di sklearn, equivalente al nodo oct
                 print(i)
                 feat = sk_features[j]  # è la feature da prendere nell'i esimo nodo
                 m.add_var_value('a%d_%d' % (i, feat), 1)
@@ -298,18 +306,18 @@ class optimaltree(BaseEstimator):
 
         for t in self.Tb:
             if sk_features[t] >= 0:
-                i = list(idx_sk).index(t)
+                i = list(idx).index(t)
                 print(i)
                 m.add_var_value(('d_%d' % (i)), 1)
         for leaf in self.Tl:
             m.add_var_value(('l_%d' % (leaf)), 1)
 
         jj = -1
-        for node in idx_sk:
+        for node in idx:
             jj += 1
             k = np.argmax(sk_val[jj][0])
             num = np.sum(sk_val[jj][0])
-            ii = list(idx_sk).index(jj)
+            ii = list(idx).index(jj)
             if ii in self.Tl:
                 m.add_var_value('c_%d_%d' % (k, ii), 1)
                 m.add_var_value('Nt_%d' % (ii), num)
@@ -317,7 +325,7 @@ class optimaltree(BaseEstimator):
                     m.add_var_value('Nkt_%d_%d' % (kl, ii), sk_val[jj][0][kl])
 
         for data in range(len(dataframe)):
-            foglia = list(idx_sk).index(sk_z[data])
+            foglia = list(idx).index(sk_z[data])
             m.add_var_value('z_%d_%d' % (data, foglia), 1)
 
         print(m)
@@ -562,7 +570,7 @@ class optimaltree(BaseEstimator):
 
 # to use wine dataset
 
-df = pd.read_csv('wine.data.csv', header=None)
+'''df = pd.read_csv('wine.data.csv', header=None)
 y = df[0]-1
 df = df[df.columns[1:]]
 data = df[df.columns[1:]].values
@@ -571,12 +579,12 @@ df2 = df
 
 
 #to use monk
-'''df = pd.read_csv('ThoraricSurgery.csv', header=None)
-y = df[0]
-df = df[df.columns[1:]]
-data = df[df.columns[1:]].values
+df = pd.read_csv('ThoraricSurgery.csv', header=None)
+y = df[16]
+df = df[df.columns[0:16]]
+data = df[df.columns[0:16]].values
 df2 = df
-print(y)'''
+
 '''
 df = pd.read_csv('fertility.csv', header=None)
 y=df[9]
@@ -597,8 +605,8 @@ for i in range(len(y)):
 y = df[2]
 df = df[df.columns[0:2]]
 data = df[df.columns[0:2]].values
-df2 = df'''
-
+df2 = df
+'''
 X_train, X_test, y_train, y_test = train_test_split(df, y, test_size=0, random_state=1)
 
 # DATA BETWEEN 0-1
