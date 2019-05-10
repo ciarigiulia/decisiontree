@@ -1,29 +1,28 @@
-from math import floor
 from math import ceil
-from time import time
+from math import floor
 
 import numpy as np
 import pandas as pd
+import pygraphviz as pgv
 from docplex.mp.model import Model
+from docplex.mp.solution import SolveSolution
 from sklearn.base import BaseEstimator
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
-from docplex.mp.solution import SolveSolution
-import pygraphviz as pgv
 from sklearn.tree import DecisionTreeClassifier
-import graphviz
-from sklearn import tree
 
 
-class optimaltree(BaseEstimator):
+class OptimalTree(BaseEstimator):
 
-    def __init__(self, depth=2, alpha=0.0, Nmin=1, max_features=4, name='OCT-H'):
+    def __init__(self, depth=2, alpha=0.0, Nmin=1, max_features=4, name='OCT-H', dataset='wine.data.csv', label=0):
 
         self.depth = depth
         self.alpha = alpha
         self.Nmin = Nmin
         self.max_features = max_features
         self.name = name
+        self.dataset = dataset
+        self.label = label
 
         self.mu = 0.005
         self.bigM = 2
@@ -97,7 +96,6 @@ class optimaltree(BaseEstimator):
         self.parent = self.find_pt()
         self.Al, self.Ar = self.find_anc()
         self.M = len(dataframe)
-        # self.Nmin = int(len(dataframe)*0.05)
         points = dataframe.index
         Num_points = len(dataframe)  # number of points
 
@@ -119,10 +117,11 @@ class optimaltree(BaseEstimator):
         a_hat = []
         for t in self.Tb:
             a_hat.append(mdl.continuous_var_list(len(self.features), ub=1, lb=-1,
-                                                 name='a_hat%d' % t))  # TODO va messo upper/lower bound qui?
-        s = []
-        for t in self.Tb:
-            s.append(mdl.binary_var_list(len(self.features), name='s%d' % t))
+                                                 name='a_hat%d' % t))
+        if self.name == 'OCT-H' or self.name == 'S1' or self.name == 'St':
+            s = []
+            for t in self.Tb:
+                s.append(mdl.binary_var_list(len(self.features), name='s%d' % t))
         b = mdl.continuous_var_list(self.Tb, name='b')
 
         d = mdl.binary_var_list(self.Tb, name='d')
@@ -196,21 +195,22 @@ class optimaltree(BaseEstimator):
         for t in self.Tb:
             for f in self.features:
                 mdl.add_constraint(a_hat[t][f] >= -a[t][f])
+        if self.name == 'OCT-H' or self.name == 'S1' or self.name == 'St':
 
-        for t in self.Tb:
-            for f in self.features:
-                mdl.add_constraint(-s[t][f] <= a[t][f])
+            for t in self.Tb:
+                for f in self.features:
+                    mdl.add_constraint(-s[t][f] <= a[t][f])
 
-        for t in self.Tb:
-            for f in self.features:
-                mdl.add_constraint(a[t][f] <= s[t][f])
+            for t in self.Tb:
+                for f in self.features:
+                    mdl.add_constraint(a[t][f] <= s[t][f])
 
-        for t in self.Tb:
-            for f in self.features:
-                mdl.add_constraint(s[t][f] <= d[t])
+            for t in self.Tb:
+                for f in self.features:
+                    mdl.add_constraint(s[t][f] <= d[t])
 
-        for t in self.Tb:
-            mdl.add_constraint(mdl.sum(s[t][f] for f in self.features) >= d[t])
+            for t in self.Tb:
+                mdl.add_constraint(mdl.sum(s[t][f] for f in self.features) >= d[t])
 
         for t in self.Tb:
             mdl.add_constraint(b[t] <= d[t])
@@ -221,22 +221,9 @@ class optimaltree(BaseEstimator):
         for t in np.delete(self.Tb, 0):
             mdl.add_constraint(d[t] <= d[self.parent[t]])
 
-        randa = [np.random.uniform(1 - 1e-1, 1 + 1e-1) for t in self.Tb]
-        randL = [np.random.uniform(1 - 1e-1, 1 + 1e-1) for t in self.Tl]
-
-        #for i in range(0, len(self.Tl), 2):
-        #    mdl.add_constraint(l[i] <= d[self.find_pt()[i + self.depth]])
-
-        # vincolo giorgio
-        #if len(self.classes) <= len(self.Tl):
-        #    for k in range(len(self.classes)):
-        #        mdl.add_constraint(1 <= mdl.sum(c[k, le + self.floorTb] for le in range(len(self.Tl))))
-        # mdl.add_constraint(mdl.sum(l[leaf] for leaf in range(len(self.Tl))) <= len(self.classes)) #vincolo prof
         if self.name == 'St':
             for t in self.Tb:
                 mdl.add_constraint(mdl.sum(s[t][f] for f in self.features) <= self.max_features)
-        # for f in self.features:
-        #    mdl.add_constraint(mdl.sum(s[t][f] for t in self.Tb) <= 1)
         if self.name == 'S1' or self.name == 'St':
             mdl.add_constraint(
                 mdl.sum(s[t][f] for t in self.Tb for f in self.features) <= self.max_features * len(self.Tb))
@@ -247,6 +234,10 @@ class optimaltree(BaseEstimator):
                 mdl.sum(s[t][f] for t in self.Tb for f in self.features)))
         if self.name == 'S1' or self.name == 'St':
                 mdl.minimize(mdl.sum(L[le] for le in range(len(self.Tl))) + self.alpha * mdl.sum(d[t] for t in self.Tb))
+        if self.name == 'LDA':
+            mdl.minimize(mdl.sum(L[le] for le in range(len(self.Tl))) + self.alpha * (
+                    mdl.sum(d[t] for t in self.Tb) + mdl.sum(a_hat[t][f] for t in self.Tb for f in self.features) / len(
+                self.features * len(self.Tb))))
 
         mdl.print_information()
 
@@ -327,20 +318,17 @@ class optimaltree(BaseEstimator):
     def fit_with_cart(self, dataframe, y):
         sol = self.find_cart(dataframe, y)
 
-        # sol.export('/Users/giuliaciarimboli/Desktop')
-        sol.set_time_limit(120)
+        sol.set_time_limit(30)
         sol.solve(log_output=True)
-        # sol.print_solution()
 
-        train_error = 0
-        for leaf in self.Tl:
-            train_error += sol.solution.get_value('L_' + str(leaf))
-        train_error = train_error / self.M
-        print('train_error:', train_error)
+        #train_error = 0
+        #for leaf in self.Tl:
+        #    train_error += sol.solution.get_value('L_' + str(leaf))
+        #train_error = train_error / self.M
+        #print('train_error:', train_error)
 
         # GRAPH
-        g = pgv.AGraph(directed=True)  # initialize the graph
-
+        '''g = pgv.AGraph(directed=True)  # initialize the graph
         nodes = np.append(self.Tb, self.Tl)
         for n in nodes:  # the graph has a node for eache node of the tree
             g.add_node(n, shape='circle', size=8)
@@ -371,7 +359,7 @@ class optimaltree(BaseEstimator):
                 if sol.solution.get_value('c_' + str(k) + '_' + str(leaf)) == 1:
                     g.get_node(leaf).attr['label'] = str(s) + '\\n' + 'class %d' % (self.classes[k])
         g.layout(prog='dot')
-        g.draw('/Users/giuliaciarimboli/Desktop/w.pdf')
+        g.draw('/Users/giuliaciarimboli/Desktop/w.pdf')'''
 
         return sol
 
@@ -411,6 +399,7 @@ class optimaltree(BaseEstimator):
             ind = lista_y[t].index
             ind_df = lista_df[t].index
             if len(lista_y[t]) > self.Nmin:
+                print('sto analizzanto il nodo:',ordine_l[t])
                 '''for f in self.features:
                     mm.add_var_value('a%d_%d' % (ordine_l[t], f), 0)
                     mm.add_var_value('a_hat%d_%d' % (ordine_l[t], f), 0)
@@ -437,11 +426,13 @@ class optimaltree(BaseEstimator):
                 lista_y.insert(2,[])
             else:'''
                 mdl = self.fit_with_cart(lista_df[t], lista_y[t])
-                cl = yy[9].unique()
+                cl = yy[0].unique()
                 cl.sort()
                 for f in self.features:
                     mm.add_var_value('a%d_%d' % (ordine_l[t], f), mdl.solution.get_value('a0_%d' % f))
                     mm.add_var_value('a_hat%d_%d' % (ordine_l[t], f), mdl.solution.get_value('a_hat0_%d' % f))
+                    if self.name == 'OCT-H' or self.name == 'S1' or self.name == 'St':
+                        mm.add_var_value('s%d_%d' % (ordine_l[t], f), mdl.solution.get_value('s0_%d' % f))
                 mm.add_var_value('b_%d' % (ordine_l[t]), mdl.solution.get_value('b_0'))
                 mm.add_var_value('d_%d' % (ordine_l[t]), mdl.solution.get_value('d_0'))
                 if 2 * ordine_l[t] + 1 in Tl:
@@ -485,7 +476,7 @@ class optimaltree(BaseEstimator):
                 for i in range(len(lista_df[t])):
                     j = ind[i]
                     m = ind_df[i]
-                    if mdl.solution.get_value('z_%d_1' % (i)) == 1:
+                    if mdl.solution.get_value('z_%d_1' % i) == 1:
                         df_split1.insert(-1, lista_df[t].loc[m])
                         y_1.insert(-1, lista_y[t].loc[j])
                     else:
@@ -499,6 +490,13 @@ class optimaltree(BaseEstimator):
                 lista_df.insert(2, df_2)
                 lista_y.insert(1, y_1)
                 lista_y.insert(2, y_2)
+
+            else:
+                lista_df.insert(1, [])
+                lista_df.insert(2, [])
+                lista_y.insert(1, [])
+                lista_y.insert(2, [])
+
 
         lista_df_r = []
         lista_y_r = []
@@ -517,6 +515,8 @@ class optimaltree(BaseEstimator):
             ind = lista_y_r[t].index
             ind_df = lista_df_r[t].index
             if len(lista_y_r[t]) > self.Nmin:
+                print('sto analizzanto il nodo:',ordine_r[t])
+
                 '''for f in self.features:
                     mm.add_var_value('a%d_%d' % (ordine_l[t], f), 0)
                     mm.add_var_value('a_hat%d_%d' % (ordine_l[t], f), 0)
@@ -540,12 +540,14 @@ class optimaltree(BaseEstimator):
                 lista_y_r.insert(2, [])
             else:'''
                 mdl = self.fit_with_cart(lista_df_r[t], lista_y_r[t])
-                cl = yy[9].unique()
+                cl = yy[0].unique()
                 cl.sort()
 
                 for f in self.features:
-                    mm.add_var_value('a%d_%d' % (ordine_r[t], f), mdl.solution.get_value('a0_%d' % (f)))
-                    mm.add_var_value('a_hat%d_%d' % (ordine_r[t], f), mdl.solution.get_value('a_hat0_%d' % (f)))
+                    mm.add_var_value('a%d_%d' % (ordine_r[t], f), mdl.solution.get_value('a0_%d' % f))
+                    mm.add_var_value('a_hat%d_%d' % (ordine_r[t], f), mdl.solution.get_value('a_hat0_%d' % f))
+                    if self.name == 'OCT-H' or self.name == 'S1' or self.name == 'St':
+                        mm.add_var_value('s%d_%d' % (ordine_r[t], f), mdl.solution.get_value('s0_%d' % f))
                 mm.add_var_value('b_%d' % (ordine_r[t]), mdl.solution.get_value('b_0'))
                 mm.add_var_value('d_%d' % (ordine_r[t]), mdl.solution.get_value('d_0'))
                 if 2 * ordine_r[t] + 1 in Tl:
@@ -605,11 +607,15 @@ class optimaltree(BaseEstimator):
                 lista_df_r.insert(2, df_2)
                 lista_y_r.insert(1, y_1)
                 lista_y_r.insert(2, y_2)
+            else:
+                lista_df_r.insert(1, [])
+                lista_df_r.insert(2, [])
+                lista_y_r.insert(1, [])
+                lista_y_r.insert(2, [])
 
 
             # GRAPH WARM START
             g = pgv.AGraph(directed=True)  # initialize the graph
-
             nodes = np.append(Tb, Tl)
             for n in nodes:  # the graph has a node for eache node of the tree
                 g.add_node(n, shape='circle', size=8)
@@ -640,14 +646,14 @@ class optimaltree(BaseEstimator):
                     if mm.get_value('c_' + str(k) + '_' + str(leaf)) == 1:
                         g.get_node(leaf).attr['label'] = str(s) + '\\n' + 'class %d' % (classes[k])
             g.layout(prog='dot')
-            g.draw('/Users/giuliaciarimboli/Desktop/warm_start_%s.pdf' % self.name)
+            g.draw('/Users/giuliaciarimboli/Desktop/WarmStart_%s_%s_%d.pdf' % (self.dataset, self.name, d))
 
         print('la soluzione warm start:', mm)
 
         print(mm.check_as_mip_start())
         modello.add_mip_start(mm)
 
-        modello.set_time_limit(900)
+        modello.set_time_limit(120)
         modello.parameters.emphasis.mip = 4
 
         s = modello.solve(log_output=True)
@@ -706,7 +712,7 @@ class optimaltree(BaseEstimator):
                 if modello.solution.get_value('c_' + str(k) + '_' + str(leaf)) == 1:
                     g.get_node(leaf).attr['label'] = str(s) + '\\n' + 'class %d' % (classes[k])
         g.layout(prog='dot')
-        g.draw('/Users/giuliaciarimboli/Desktop/solfinale%s.pdf' % self.name)
+        g.draw('/Users/giuliaciarimboli/Desktop/solfinale_%s_%s_%d.pdf' % (self.dataset, self.name, d))
 
         return a_test, b_test, c_test, train_error
 
@@ -753,43 +759,9 @@ class optimaltree(BaseEstimator):
 
         return
 
-    def warm_start_univariate(self, dataframe, y, univariate):
-        print('risolvo il modello OCT')
-        univariate.solve()
-        mdl = self.model(dataframe, dataframe, y)
-        m = SolveSolution(mdl)
-        points = np.arange(0, len(dataframe))
-        for t in self.Tb:
-            for f in self.features:
-                m.add_var_value('a' + str(t) + '_' + str(f), univariate.solution.get_value('a' + str(t) + '_' + str(f)))
-                m.add_var_value('a_hat' + str(t) + '_' + str(f),
-                                univariate.solution.get_value('a' + str(t) + '_' + str(f)))
-                m.add_var_value('s' + str(t) + '_' + str(f), univariate.solution.get_value('a' + str(t) + '_' + str(f)))
-        for t in self.Tb:
-            m.add_var_value('b_' + str(t), univariate.solution.get_value('b_' + str(t)))
-            m.add_var_value('d_' + str(t), univariate.solution.get_value('d_' + str(t)))
-        for leaf in self.Tl:
-            m.add_var_value('l_' + str(leaf), univariate.solution.get_value('l_' + str(leaf)))
-            m.add_var_value('Nt_' + str(leaf), univariate.solution.get_value('Nt_' + str(leaf)))
-            m.add_var_value('L_' + str(leaf), univariate.solution.get_value('L_' + str(leaf)))
-
-            for k in range(len(self.classes)):
-                m.add_var_value('c_' + str(k) + '_' + str(leaf),
-                                univariate.solution.get_value('c_' + str(k) + '_' + str(leaf)))
-                m.add_var_value('Nkt_' + str(k) + '_' + str(leaf),
-                                univariate.solution.get_value('Nkt_' + str(k) + '_' + str(leaf)))
-        for n in points:
-            for leaf in self.Tl:
-                m.add_var_value('z_' + str(n) + '_' + str(leaf),
-                                univariate.solution.get_value('z_' + str(n) + '_' + str(leaf)))
-        mdl.add_mip_start(m)
-        mdl.solve(log_output=True)
-        return mdl
-
-
 # to use wine dataset
 
-'''df = pd.read_csv('wine.data.csv', header=None)
+df = pd.read_csv('wine.data.csv', header=None)
 y = df[0]
 df = df[df.columns[1:]]
 #data = df[df.columns[1:]].values
@@ -803,11 +775,11 @@ data = df[df.columns[1:]].values
 df2 = df'''
 
 # to use thoracic
-df = pd.read_csv('ThoraricSurgery.csv', header=None)
+'''df = pd.read_csv('ThoraricSurgery.csv', header=None)
 y = df[16]
 df = df[df.columns[0:16]]
 data = df[df.columns[0:16]].values
-df2 = df
+df2 = df'''
 
 '''df = pd.read_csv('hayes-roth.csv', header=None)
 y=df[5]
@@ -822,11 +794,11 @@ y = df[6]
 df = df[df.columns[0:6]]
 data = df[df.columns[0:6]].values
 df2 = df'''
-df = pd.read_csv('cmc.csv', header=None)
+'''df = pd.read_csv('cmc.csv', header=None)
 y = df[9]
 df = df[df.columns[0:9]]
 data = df[df.columns[0:9]].values
-df2 = df
+df2 = df'''
 
 X_train, X_test, y_train, y_test = train_test_split(df, y, test_size=0.25, random_state=1)
 
@@ -848,26 +820,45 @@ for i in range(len(df_test)):
             df_test[i][j] = 0
 df_test = pd.DataFrame(df_test)
 
-d = 3
+d = 2
 a = 0.5
-N = int(3 / 100 * (len(df) + len(df_test)))
-print(N)
-F = 4  # len(df.columns)
-versions = [ 'OCT-H']  # possibilities: 'S1', 'St', 'OCT-H'
-for v in versions:
+N = 1  # int(3 / 100 * (len(df) + len(df_test)))
+F = 3  # len(df.columns)
 
-    t = optimaltree(depth=d, Nmin=N, alpha=a, max_features=F, name=v)
-    #f2 = t.fit_with_cart(df,  y_train)
-    modello = t.model(df, y_train)
+versions = ['OCT-H', 'S1', 'St', 'LDA']  # possibilities: 'OCT-H', 'S1', 'St', 'LDA'
+datasets = ['wine.data.csv']
+labels = [0]
 
-    warm = optimaltree(depth=1, alpha=a, Nmin=N, max_features=F, name=v)
-    ws = warm.test(df, y_train, d, modello, df_test, y_test)
+for dataset in datasets:
+    df = pd.read_csv(dataset, header=None)
+    y = df[0]
+    df = df[df.columns[1:]]
+    X_train, X_test, y_train, y_test = train_test_split(df, y, test_size=0.25, random_state=1)
+    scaler = MinMaxScaler()
+    df_scaled = scaler.fit(X_train)  # save object fitted only with train data
+    df = scaler.transform(X_train)
+    df = pd.DataFrame(df)  # scaled dataframe
+    df_test = scaler.transform(X_test)  # apply same transformation to test set
+    for i in range(len(df_test)):
+        for j in range(len(df_test[0])):
+            if df_test[i][j] > 1:
+                df_test[i][j] = 1
+            elif df_test[i][j] < 0:
+                df_test[i][j] = 0
+    df_test = pd.DataFrame(df_test)
+
+    for v in versions:
+        print('RISOLVO IL MODELLO %s PER IL DATASET %s'%(v, dataset))
+        t = OptimalTree(depth=d, Nmin=N, alpha=a, max_features=F, name=v, dataset=dataset)
+        modello = t.model(df, y_train)
+        warm = OptimalTree(depth=1, alpha=a, Nmin=N, max_features=F, name=v)
+        ws = warm.test(df, y_train, d, modello, df_test, y_test)
 
 # to fit with cart as warm start
 # f2 = t.fit_with_cart(df,  y_train)
 
-'''from dec_tree import optimaltree
-ot = optimaltree(depth=d, alpha=a, Nmin=N)
+'''from dec_tree import OptimalTree
+ot = OptimalTree(depth=d, alpha=a, Nmin=N)
 uni = ot.find_cart(df,  y_train)
 f = t.warm_start_univariate(df, y_train, uni)'''
 
