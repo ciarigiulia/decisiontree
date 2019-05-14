@@ -10,6 +10,8 @@ from sklearn.base import BaseEstimator
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.tree import DecisionTreeClassifier
+from sklearn import tree
+import graphviz
 import csv
 
 
@@ -46,13 +48,13 @@ class OptimalTree(BaseEstimator):
         self.M1 = 1000
         self.M = 1000
         self.eps = []
-        self.epsmin = 1e-5
+        self.epsmin = 1e-3
 
         self.mu = 0.005
         self.bigM = 2
         self.max_features = max_features
 
-        self.csvrow = [0] * 22
+        self.csvrow = [0] * 25
 
     def find_T(self, dataframe, y):
 
@@ -119,8 +121,10 @@ class OptimalTree(BaseEstimator):
                     if diff[j] == 0:
                         diff2 = np.delete(diff2, j - count)
                         count += 1
-
-                eps[i] = min(diff2)
+                if len(diff2)>0:
+                    eps[i] = min(diff2)
+                else:
+                    eps[i] = 1e-5
 
             else:
 
@@ -160,7 +164,8 @@ class OptimalTree(BaseEstimator):
 
         mdl = Model(name=self.name)
         mdl.clear()
-        mdl.parameters.emphasis.mip = 0
+        if self.version == 'multivariate':
+            mdl.parameters.emphasis.mip = 4 # TODO SCEGLIERE EMPHASIS (MULTIVARIATE MEGLIO 4)
 
         Y = np.arange(len(self.classes) * len(points)).reshape(len(points), len(self.classes))
         for i in range(0, len(points)):
@@ -421,7 +426,7 @@ class OptimalTree(BaseEstimator):
 
         sol = self.find_cart(dataframe, dataframe2, y)
         if self.version == 'univariate':
-            sol.set_time_limit(120)  # TODO METTERE TIME LIMIT PER LA SOLUZIONE FINALE DEL MODELLO UNIVARIATE COL CART (1800)
+            sol.set_time_limit(600)  # TODO METTERE TIME LIMIT PER LA SOLUZIONE FINALE DEL MODELLO UNIVARIATE COL CART (1800)
 
             self.csvrow[0] = self.dataset
             self.csvrow[2] = len(self.features)
@@ -447,11 +452,11 @@ class OptimalTree(BaseEstimator):
                     activeleaves += 1
             self.csvrow[8] = activenodes
             self.csvrow[9] = activeleaves
-            self.csvrow[17] = s.solve_details.time
-            self.csvrow[18] = s.solve_details.mip_relative_gap
-            self.csvrow[19] = '?'
-            self.csvrow[21] = s.solve_details.best_bound
-            self.csvrow[20] = s.objective_value
+            self.csvrow[20] = int(s.solve_details.time)
+            self.csvrow[21] = s.solve_details.mip_relative_gap
+            self.csvrow[22] = '?'
+            self.csvrow[23] = s.solve_details.best_bound
+            self.csvrow[24] = s.objective_value
 
             self.draw_graph_univariate(s)
             train_error = 0
@@ -476,17 +481,16 @@ class OptimalTree(BaseEstimator):
             return a_test, b_test, c_test, train_error
 
         elif self.version == 'multivariate':
-            sol.set_time_limit(30) # TODO METTERE TIME LIMIT PER LA RISOLUZIONE DEL WARM START DEL MULTIVARIATO (240)
+            sol.set_time_limit(240) # TODO METTERE TIME LIMIT PER LA RISOLUZIONE DEL WARM START DEL MULTIVARIATO CON PROFONDITA 1 (240)
             sol.solve(log_output=True)
             return sol
 
     def find_oct_warmstart(self, dataframe, dataframe2, y):
         mod = self.find_cart(dataframe, dataframe2, y)
-        mod.set_time_limit(30) # TODO TIME LIMIT PER RISOLVERE IL WARM START OCT CON DEPTH= D-1
+        mod.set_time_limit(240) # TODO TIME LIMIT PER RISOLVERE IL WARM START OCT CON DEPTH= D-1
         s = mod.solve(log_output=True)
         mod.print_solution()
         self.draw_graph_univariate(s)
-        print('find cart solution:')
 
         a_oct = [] * len(self.features)
         b_oct = []
@@ -586,9 +590,9 @@ class OptimalTree(BaseEstimator):
             j += 1
         print(s.check_as_mip_start())
         sol.add_mip_start(s)
-        sol.set_time_limit(30) # TODO TIME LIMIT PER TROVARE SOLUZIONE FINALE UNIVARIATE_OCT
+        sol.set_time_limit(600) # TODO TIME LIMIT PER TROVARE SOLUZIONE FINALE UNIVARIATE_OCT
         # mdl.parameters.mip.tolerances.mipgap(0.1)
-        sol.parameters.emphasis.mip = 0
+        #sol.parameters.emphasis.mip = 0
         print('finding solution with OCT as MIP START:')
         s = sol.solve(log_output=True)
 
@@ -602,11 +606,11 @@ class OptimalTree(BaseEstimator):
                 activeleaves += 1
         self.csvrow[8] = activenodes
         self.csvrow[9] = activeleaves
-        self.csvrow[17] = s.solve_details.time
-        self.csvrow[18] = s.solve_details.mip_relative_gap
-        self.csvrow[19] = '?'
-        self.csvrow[21] = s.solve_details.best_bound
-        self.csvrow[20] = s.objective_value
+        self.csvrow[20] = int(s.solve_details.time)
+        self.csvrow[21] = s.solve_details.mip_relative_gap
+        self.csvrow[22] = '?'
+        self.csvrow[23] = s.solve_details.best_bound
+        self.csvrow[24] = s.objective_value
 
         # GRAPH
         self.draw_graph_univariate(s)
@@ -741,9 +745,9 @@ class OptimalTree(BaseEstimator):
 
                     for k in range(len(cl)):
                         mm.add_var_value('c_%d_%d' % (list(classes).index(cl[k]), leaf),
-                                         mdl.solution.get_value('c_%d_1' % (k)))
+                                         mdl.solution.get_value('c_%d_1' % k))
                         mm.add_var_value('Nkt_%d_%d' % (list(classes).index(cl[k]), leaf),
-                                         mdl.solution.get_value('Nkt_%d_1' % (k)))
+                                         mdl.solution.get_value('Nkt_%d_1' % k))
                     kl = list(set(classes) - set(cl))
                     for k2 in range(len(kl)):
                         mm.add_var_value('c_%d_%d' % (list(classes).index(kl[k2]), leaf), 0)
@@ -757,7 +761,7 @@ class OptimalTree(BaseEstimator):
                 if 2 * ordine_l[t] + 2 in Tl:
                     leaf = 2 * ordine_l[t] + 2
                     mm.add_var_value('Nt_%d' % leaf, mdl.solution.get_value('Nt_2'))
-                    mm.add_var_value('l_%d' % (leaf), mdl.solution.get_value('l_2'))
+                    mm.add_var_value('l_%d' % leaf, mdl.solution.get_value('l_2'))
                     for k in range(len(cl)):
                         mm.add_var_value('c_%d_%d' % (list(classes).index(cl[k]), leaf),
                                          mdl.solution.get_value('c_%d_2' % k))
@@ -859,9 +863,9 @@ class OptimalTree(BaseEstimator):
 
                     for k in range(len(cl)):
                         mm.add_var_value('c_%d_%d' % (list(classes).index(cl[k]), leaf),
-                                         mdl.solution.get_value('c_%d_1' % (k)))
+                                         mdl.solution.get_value('c_%d_1' % k))
                         mm.add_var_value('Nkt_%d_%d' % (list(classes).index(cl[k]), leaf),
-                                         mdl.solution.get_value('Nkt_%d_1' % (k)))
+                                         mdl.solution.get_value('Nkt_%d_1' % k))
                     kl = list(set(classes) - set(cl))
                     for k2 in range(len(kl)):
                         mm.add_var_value('c_%d_%d' % (list(classes).index(kl[k2]), leaf), 0)
@@ -874,8 +878,8 @@ class OptimalTree(BaseEstimator):
                         mm.add_var_value('z_%d_%d' % (n, leaf), 0)
                 if 2 * ordine_r[t] + 2 in Tl:
                     leaf = 2 * ordine_r[t] + 2
-                    mm.add_var_value('l_%d' % (leaf), mdl.solution.get_value('l_2'))
-                    mm.add_var_value('Nt_%d' % (leaf), mdl.solution.get_value('Nt_2'))
+                    mm.add_var_value('l_%d' % leaf, mdl.solution.get_value('l_2'))
+                    mm.add_var_value('Nt_%d' % leaf, mdl.solution.get_value('Nt_2'))
                     for k in range(len(cl)):
                         mm.add_var_value('c_%d_%d' % (list(classes).index(cl[k]), leaf),
                                          mdl.solution.get_value('c_%d_2' % k))
@@ -959,9 +963,9 @@ class OptimalTree(BaseEstimator):
         print(mm.check_as_mip_start())
         modello.add_mip_start(mm)
 
-        modello.set_time_limit(30) #TODO TIME LIMIT PER TROVARE SOLUZIONE FINALE MULTIVARIATE
+        modello.set_time_limit(240) #TODO TIME LIMIT PER TROVARE SOLUZIONE FINALE MULTIVARIATE
 
-        modello.parameters.emphasis.mip = 4
+        #modello.parameters.emphasis.mip = 4
         self.csvrow[0] = self.dataset
         self.csvrow[2] = len(self.features)
         self.csvrow[3] = self.version
@@ -973,6 +977,7 @@ class OptimalTree(BaseEstimator):
         self.csvrow[11] = modello.number_of_binary_variables
         self.csvrow[12] = modello.number_of_continuous_variables
         self.csvrow[13] = modello.number_of_constraints
+
         s = modello.solve(log_output=True)
 
         activenodes = 0
@@ -985,11 +990,11 @@ class OptimalTree(BaseEstimator):
                 activeleaves += 1
         self.csvrow[8] = activenodes
         self.csvrow[9] = activeleaves
-        self.csvrow[17] = modello.solve_details.time
-        self.csvrow[18] = modello.solve_details.mip_relative_gap
-        self.csvrow[19] = '?'
-        self.csvrow[21] = modello.solve_details.best_bound
-        self.csvrow[20] = modello.objective_value
+        self.csvrow[20] = int(modello.solve_details.time)
+        self.csvrow[21] = modello.solve_details.mip_relative_gap
+        self.csvrow[22] = '?'
+        self.csvrow[23] = modello.solve_details.best_bound
+        self.csvrow[24] = modello.objective_value
 
         modello.print_solution()
 
@@ -1120,7 +1125,11 @@ class OptimalTree(BaseEstimator):
         self.csvrow[1] = len(dataframe) + len(dataframe_test)
         self.csvrow[14] = train_error
         self.csvrow[15] = test_error
-        self.csvrow[16] = confusion_matrix
+        self.csvrow[16] = tp
+        self.csvrow[17] = fp
+        self.csvrow[18] = fn
+        self.csvrow[19] = tn
+
         self.write_on_csv()
 
         return
@@ -1132,114 +1141,50 @@ class OptimalTree(BaseEstimator):
             writer.writerow(self.csvrow)
         return
 
-
-# to use wine dataset
-
-'''df = pd.read_csv('wine.data.csv', header=None)
-y = df[0]
-df = df[df.columns[1:]]
-#data = df[df.columns[1:]].values
-df2 = df
-# to use fertility dataset'''
-
-'''df = pd.read_csv('primary-tumor.csv', header=None)
-y = df[0]
-df = df[df.columns[1:]]
-data = df[df.columns[1:]].values
-df2 = df'''
-
-# to use thoracic
-'''df = pd.read_csv('ThoraricSurgery.csv', header=None)
-y = df[16]
-df = df[df.columns[0:16]]
-data = df[df.columns[0:16]].values
-df2 = df'''
-
-'''df = pd.read_csv('hayes-roth.csv', header=None)
-y=df[5]
-df=df[df.columns[1:5]]
-data= df[df.columns[1:5]].values
-df2=df'''
-
-# to use prova dataset
-
-'''df = pd.read_csv('car.csv', header=None)
-y = df[6]
-df = df[df.columns[0:6]]
-data = df[df.columns[0:6]].values
-df2 = df'''
-'''df = pd.read_csv('cmc.csv', header=None)
-y = df[9]
-df = df[df.columns[0:9]]
-data = df[df.columns[0:9]].values
-df2 = df'''
-
-# X_train, X_test, y_train, y_test = train_test_split(df, y, test_size=0.25, random_state=1)
-
-# DATA BETWEEN 0-1
-# scaler = MinMaxScaler()
-# df_scaled = scaler.fit(X_train)  # save object fitted only with train data
-# df = scaler.transform(X_train)
-# df = pd.DataFrame(df)  # scaled dataframe
-
-# y_train = pd.DataFrame(y_train)
-# print(y_train)
-# print(df)
-'''df_test = scaler.transform(X_test)  # apply same transformation to test set
-for i in range(len(df_test)):
-    for j in range(len(df_test[0])):
-        if df_test[i][j] > 1:
-            df_test[i][j] = 1
-        elif df_test[i][j] < 0:
-            df_test[i][j] = 0
-df_test = pd.DataFrame(df_test)'''
-
 depths = [2, 3, 4]
 a = 0.5
 N = 1  # int(3 / 100 * (len(df) + len(df_test)))
 F = 3  # len(df.columns)
-versions = ['univariate'] # possibilities: 'multivariate', 'univariate'
+versions = ['multivariate','univariate'] # possibilities: 'multivariate', 'univariate'
 names = ['OCT-H', 'S1', 'St', 'LDA']  # possibilities: 'OCT-H', 'S1', 'St', 'LDA'
-datasets = ['ThoracicSurgery.csv']
+datasets = ['ionosphere.csv', 'ThoracicSurgery.csv']
 mipstarts = ['CART', 'OCT'] #possibilities: 'CART', 'OCT'
 
 for trainset in datasets:
-    df = pd.read_csv(trainset, header=None)
-    y = df[0]
-    df = df[df.columns[1:]]
-    X_train, X_test, y_train, y_test = train_test_split(df, y, test_size=0.25, random_state=1)
-    scaler = MinMaxScaler()
-    df_scaled = scaler.fit(X_train)  # save object fitted only with train data
-    df = scaler.transform(X_train)
-    df = pd.DataFrame(df)  # scaled dataframe
-    df2 = df
-    df_test = scaler.transform(X_test)  # apply same transformation to test set
-    for i in range(len(df_test)):
-        for j in range(len(df_test[0])):
-            if df_test[i][j] > 1:
-                df_test[i][j] = 1
-            elif df_test[i][j] < 0:
-                df_test[i][j] = 0
-    df_test = pd.DataFrame(df_test)
     for d in depths:
         for v in versions:
+            df = pd.read_csv(trainset, header=None)
+            y = df[0]
+            df = df[df.columns[1:]]
+            X_train, X_test, y_train, y_test = train_test_split(df, y, test_size=0.25, random_state=1)
+            scaler = MinMaxScaler()
+            df_scaled = scaler.fit(X_train)  # save object fitted only with train data
+            df = scaler.transform(X_train)
+            df = pd.DataFrame(df)  # scaled dataframe
+            df2 = df
+            df_test = scaler.transform(X_test)  # apply same transformation to test set
+            for i in range(len(df_test)):
+                for j in range(len(df_test[0])):
+                    if df_test[i][j] > 1:
+                        df_test[i][j] = 1
+                    elif df_test[i][j] < 0:
+                        df_test[i][j] = 0
+            df_test = pd.DataFrame(df_test)
             if v == 'univariate':
-
-                print('true')
-                for m in mipstarts:
-                    t = OptimalTree(depth=d, alpha=a, Nmin=N, version=v, mipstart=m, dataset=trainset)
-                    print('RISOLVO IL MODELLO %s CON WARM START %s PER IL DATASET %s' % (v, m, trainset))
-                    if m == 'CART':
-                        f2 = t.test(df, df2, y_train, d, None, df_test, y_test, None)
-                    elif m == 'OCT':
-                        warm = OptimalTree(depth=d - 1, alpha=a, Nmin=N, version=v, mipstart=m, dataset=trainset)
-                        ws_ = warm.find_oct_warmstart(df, df2, y_train)
-                        f = t.test(df, df2, y_train, d, None, df_test, y_test, ws_)
-                    print(df)
+                if d>1:
+                    for m in mipstarts:
+                        t = OptimalTree(depth=d, alpha=a, Nmin=N, version=v, mipstart=m, dataset=trainset)
+                        print('RISOLVO IL MODELLO %s CON WARM START %s PER IL DATASET %s CON PROFONDITA %d' % (v, m, trainset, d))
+                        if m == 'CART':
+                            f2 = t.test(df, df2, y_train, d, None, df_test, y_test, None)
+                        elif m == 'OCT':
+                            warm = OptimalTree(depth=d - 1, alpha=a, Nmin=N, version=v, mipstart=m, dataset=trainset)
+                            ws_ = warm.find_oct_warmstart(df, df2, y_train)
+                            f = t.test(df, df2, y_train, d, None, df_test, y_test, ws_)
 
             elif v == 'multivariate':
                 for n in names:
-                    print('RISOLVO IL MODELLO %s %s PER IL DATASET %s' % (v, n, trainset))
+                    print('RISOLVO IL MODELLO %s %s PER IL DATASET %s CON PROFONDITA %d' % (v, n, trainset, d))
                     t = OptimalTree(depth=d, Nmin=N, alpha=a, max_features=F, version=v, name=n, dataset=trainset)
                     modello = t.model(df, df2, y_train)
                     warm = OptimalTree(depth=1, alpha=a, Nmin=N, max_features=F, name=n, dataset=trainset)
