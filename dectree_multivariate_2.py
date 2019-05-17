@@ -18,7 +18,7 @@ import csv
 class OptimalTree(BaseEstimator):
 
     def __init__(self, depth=2, alpha=0.0, Nmin=1, max_features=4, version='multivariate', name='OCT-H',
-                 dataset='wine.data.csv', mipstart='CART'):
+                 dataset='wine.data.csv', mipstart='CART', relax=0):
 
         self.depth = depth
         self.alpha = alpha
@@ -26,6 +26,7 @@ class OptimalTree(BaseEstimator):
         self.name = name
         self.dataset = dataset
         self.version = version
+        self.relax = relax
 
         self.Tb = []
         self.Tl = []
@@ -54,7 +55,7 @@ class OptimalTree(BaseEstimator):
         self.bigM = 2
         self.max_features = max_features
 
-        self.csvrow = [0] * 25
+        self.csvrow = [0] * 29
 
     def find_T(self, dataframe, y):
 
@@ -113,7 +114,9 @@ class OptimalTree(BaseEstimator):
                 vect.sort()
                 newvect.sort()
                 vect = np.delete(vect, 0)
+
                 newvect = np.delete(newvect, len(newvect) - 1)
+
                 diff = vect - newvect
                 diff2 = diff
                 count = 0
@@ -121,15 +124,14 @@ class OptimalTree(BaseEstimator):
                     if diff[j] == 0:
                         diff2 = np.delete(diff2, j - count)
                         count += 1
-                if len(diff2)>0:
+                if len(diff2) > 0 and min(diff2) >= 1e-6:
                     eps[i] = min(diff2)
                 else:
                     eps[i] = 1e-5
-
             else:
 
                 eps[i] = 1e-5
-
+        print(eps)
         return eps
 
     def find_epsmax(self, dataframe2):
@@ -153,199 +155,539 @@ class OptimalTree(BaseEstimator):
         points = dataframe.index
         Num_points = len(dataframe)  # number of points
 
-        if self.version == 'univariate':
-            self.eps = self.find_eps(dataframe2)
-            self.M = self.find_M(dataframe2)
-            self.M1 = self.find_M1(dataframe2)
-            err = min(self.eps)
+        if self.relax == 0:
+            if self.version == 'univariate':
+                self.eps = self.find_eps(dataframe2)
+                self.M = self.find_M(dataframe2)
+                self.M1 = self.find_M1(dataframe2)
+                err = min(self.eps)
 
-        elif self.version == 'multivariate':
-            self.M = len(dataframe)
+            elif self.version == 'multivariate':
+                self.M = len(dataframe)
 
-        mdl = Model(name=self.name)
-        mdl.clear()
-        if self.version == 'multivariate':
-            mdl.parameters.emphasis.mip = 4 # TODO SCEGLIERE EMPHASIS (MULTIVARIATE MEGLIO 4)
+            mdl = Model(name=self.name)
+            mdl.clear()
+            if self.version == 'multivariate':
+                mdl.parameters.emphasis.mip = 4  # TODO SCEGLIERE EMPHASIS (MULTIVARIATE MEGLIO 4)
 
-        Y = np.arange(len(self.classes) * len(points)).reshape(len(points), len(self.classes))
-        for i in range(0, len(points)):
-            for k in range(0, len(self.classes)):
-                k1 = self.classes[k]
-                if y.values[i] == k1:
-                    Y[i, k] = 1
-                else:
-                    Y[i, k] = -1
-        # VARIABLES
+            Y = np.arange(len(self.classes) * len(points)).reshape(len(points), len(self.classes))
+            for i in range(0, len(points)):
+                for k in range(0, len(self.classes)):
+                    k1 = self.classes[k]
+                    if y.values[i] == k1:
+                        Y[i, k] = 1
+                    else:
+                        Y[i, k] = -1
+            # VARIABLES
 
-        if self.version == 'univariate':
-            a = []
-            for t in self.Tb:
-                a.append(mdl.binary_var_list(len(self.features), name='a%d' % t))
-            b = mdl.continuous_var_list(self.Tb, lb=0,
-                                        name='b')  # TODO verificare se anche nel modello multivariate il lower bound di b è zero e eventualmente metterlo
-
-        elif self.version == 'multivariate':
-            a = []
-            for t in self.Tb:
-                a.append(mdl.continuous_var_list(len(self.features), ub=1, lb=-1, name='a%d' % t))
-            a_hat = []
-            for t in self.Tb:
-                a_hat.append(mdl.continuous_var_list(len(self.features), ub=1, lb=-1,
-                                                     name='a_hat%d' % t))
-            if self.name == 'OCT-H' or self.name == 'S1' or self.name == 'St':
-                s = []
+            if self.version == 'univariate':
+                a = []
                 for t in self.Tb:
-                    s.append(mdl.binary_var_list(len(self.features), name='s%d' % t))
-            b = mdl.continuous_var_list(self.Tb,
-                                        name='b')  # TODO verificare se anche nel modello multivariate il lower bound di b è zero e eventualmente metterlo
+                    a.append(mdl.binary_var_list(len(self.features), name='a%d' % t))
+                b = mdl.continuous_var_list(self.Tb, lb=0,
+                                            name='b')  # TODO verificare se anche nel modello multivariate il lower bound di b è zero e eventualmente metterlo
 
-        d = mdl.binary_var_list(self.Tb, name='d')
+            elif self.version == 'multivariate':
+                a = []
+                for t in self.Tb:
+                    a.append(mdl.continuous_var_list(len(self.features), ub=1, lb=-1, name='a%d' % t))
+                a_hat = []
+                for t in self.Tb:
+                    a_hat.append(mdl.continuous_var_list(len(self.features), ub=1, lb=-1,
+                                                         name='a_hat%d' % t))
+                if self.name == 'OCT-H' or self.name == 'S1' or self.name == 'St':
+                    s = []
+                    for t in self.Tb:
+                        s.append(mdl.binary_var_list(len(self.features), name='s%d' % t))
+                b = mdl.continuous_var_list(self.Tb,
+                                            name='b')  # TODO verificare se anche nel modello multivariate il lower bound di b è zero e eventualmente metterlo
 
-        z = mdl.binary_var_matrix(Num_points, self.Tl, name='z')
+            d = mdl.binary_var_list(self.Tb, name='d')
 
-        l = mdl.binary_var_list(self.Tl, name='l')
+            z = mdl.binary_var_matrix(Num_points, self.Tl, name='z')
 
-        c = mdl.binary_var_matrix(len(self.classes), self.Tl, name='c')
+            l = mdl.binary_var_list(self.Tl, name='l')
 
-        L = mdl.continuous_var_list(self.Tl, lb=0, name='L')
+            c = mdl.binary_var_matrix(len(self.classes), self.Tl, name='c')
 
-        Nt = mdl.continuous_var_list(self.Tl, name='Nt')
+            L = mdl.continuous_var_list(self.Tl, lb=0, name='L')
 
-        Nkt = mdl.continuous_var_matrix(len(self.classes), self.Tl, name='Nkt')
+            Nt = mdl.continuous_var_list(self.Tl, name='Nt')
 
-        # CONSTRAINTS
+            Nkt = mdl.continuous_var_matrix(len(self.classes), self.Tl, name='Nkt')
 
-        for le in range(len(self.Tl)):
-            for k in range(len(self.classes)):
-                mdl.add_constraint(L[le] >= Nt[le] - Nkt[k, le + self.floorTb] - self.M * (1 - c[k, le + self.floorTb]))
+            # CONSTRAINTS
+            if self.version == 'multivariate':
 
-        for le in range(len(self.Tl)):
-            for k in range(len(self.classes)):
-                mdl.add_constraint(L[le] <= Nt[le] - Nkt[k, le + self.floorTb] + self.M * c[k, le + self.floorTb])
-
-        for le in range(len(self.Tl)):
-            for k in range(len(self.classes)):
-                mdl.add_constraint(
-                    Nkt[k, le + self.floorTb] == 0.5 * mdl.sum(
-                        (1 + Y[i, k]) * z[i, le + self.floorTb] for i in range(len(points))))
-
-        for le in range(len(self.Tl)):
-            mdl.add_constraint(Nt[le] == mdl.sum(z[p, le + self.floorTb] for p in range(len(points))))
-
-        for le in range(len(self.Tl)):
-            mdl.add_constraint(l[le] == mdl.sum(c[k, le + self.floorTb] for k in range(len(self.classes))))
-
-        for p in range(len(points)):
-            mdl.add_constraint(mdl.sum(z[p, le + self.floorTb] for le in range(len(self.Tl))) == 1)
-
-        for le in range(len(self.Tl)):
-            for p in range(len(points)):
-                mdl.add_constraint(z[p, le + self.floorTb] <= l[le])
-
-        for le in range(len(self.Tl)):
-            mdl.add_constraint(l[le] * self.Nmin <= mdl.sum(z[p, le + self.floorTb] for p in range(len(points))))
-
-        for t in np.delete(self.Tb, 0):
-            mdl.add_constraint(d[t] <= d[self.parent[t]])
-
-        if self.version == 'multivariate':
-            for p in range(len(points)):
-                p1 = points[p]
                 for le in range(len(self.Tl)):
-                    for n in self.Ar[le + self.floorTb]:
+                    for k in range(len(self.classes)):
                         mdl.add_constraint(
-                            np.dot(dataframe.loc[p1], a[n]) >= b[n] - self.bigM * (1 - z[p, le + self.floorTb]))
+                            L[le] >= Nt[le] - Nkt[k, le + self.floorTb] - self.M * (1 - c[k, le + self.floorTb]))
 
-            for p in range(len(points)):
-                p1 = points[p]
                 for le in range(len(self.Tl)):
-                    for m in self.Al[le + self.floorTb]:
+                    for k in range(len(self.classes)):
                         mdl.add_constraint(
-                            np.dot(dataframe.loc[p1], a[m]) + self.mu <= b[m] + (self.bigM + self.mu) * (
-                                    1 - z[p, le + self.floorTb]))
-            for t in self.Tb:
-                mdl.add_constraint(d[t] >= mdl.sum(a_hat[t][f] for f in self.features))
+                            L[le] <= Nt[le] - Nkt[k, le + self.floorTb] + self.M * c[k, le + self.floorTb])
 
-            for t in self.Tb:
-                for f in self.features:
-                    mdl.add_constraint(a_hat[t][f] >= a[t][f])
+                for le in range(len(self.Tl)):
+                    for k in range(len(self.classes)):
+                        mdl.add_constraint(
+                            Nkt[k, le + self.floorTb] == 0.5 * mdl.sum(
+                                (1 + Y[i, k]) * z[i, le + self.floorTb] for i in range(len(points))))
 
-            for t in self.Tb:
-                for f in self.features:
-                    mdl.add_constraint(a_hat[t][f] >= -a[t][f])
-            if self.name == 'OCT-H' or self.name == 'S1' or self.name == 'St':
+                for le in range(len(self.Tl)):
+                    mdl.add_constraint(Nt[le] == mdl.sum(z[p, le + self.floorTb] for p in range(len(points))))
+
+                for le in range(len(self.Tl)):
+                    mdl.add_constraint(l[le] == mdl.sum(c[k, le + self.floorTb] for k in range(len(self.classes))))
+
+                for p in range(len(points)):
+                    mdl.add_constraint(mdl.sum(z[p, le + self.floorTb] for le in range(len(self.Tl))) == 1)
+
+                for le in range(len(self.Tl)):
+                    for p in range(len(points)):
+                        mdl.add_constraint(z[p, le + self.floorTb] <= l[le])
+
+                for le in range(len(self.Tl)):
+                    mdl.add_constraint(
+                        l[le] * self.Nmin <= mdl.sum(z[p, le + self.floorTb] for p in range(len(points))))
+
+                for t in np.delete(self.Tb, 0):
+                    mdl.add_constraint(d[t] <= d[self.parent[t]])
+
+                for p in range(len(points)):
+                    p1 = points[p]
+                    for le in range(len(self.Tl)):
+                        for n in self.Ar[le + self.floorTb]:
+                            mdl.add_constraint(
+                                np.dot(dataframe.loc[p1], a[n]) >= b[n] - self.bigM * (1 - z[p, le + self.floorTb]))
+
+                for p in range(len(points)):
+                    p1 = points[p]
+                    for le in range(len(self.Tl)):
+                        for m in self.Al[le + self.floorTb]:
+                            mdl.add_constraint(
+                                np.dot(dataframe.loc[p1], a[m]) + self.mu <= b[m] + (self.bigM + self.mu) * (
+                                        1 - z[p, le + self.floorTb]))
+                for t in self.Tb:
+                    mdl.add_constraint(d[t] >= mdl.sum(a_hat[t][f] for f in self.features))
 
                 for t in self.Tb:
                     for f in self.features:
-                        mdl.add_constraint(-s[t][f] <= a[t][f])
+                        mdl.add_constraint(a_hat[t][f] >= a[t][f])
 
                 for t in self.Tb:
                     for f in self.features:
-                        mdl.add_constraint(a[t][f] <= s[t][f])
+                        mdl.add_constraint(a_hat[t][f] >= -a[t][f])
+                if self.name == 'OCT-H' or self.name == 'S1' or self.name == 'St':
+
+                    for t in self.Tb:
+                        for f in self.features:
+                            mdl.add_constraint(-s[t][f] <= a[t][f])
+
+                    for t in self.Tb:
+                        for f in self.features:
+                            mdl.add_constraint(a[t][f] <= s[t][f])
+
+                    for t in self.Tb:
+                        for f in self.features:
+                            mdl.add_constraint(s[t][f] <= d[t])
+
+                    for t in self.Tb:
+                        mdl.add_constraint(mdl.sum(s[t][f] for f in self.features) >= d[t])
 
                 for t in self.Tb:
-                    for f in self.features:
-                        mdl.add_constraint(s[t][f] <= d[t])
+                    mdl.add_constraint(b[t] <= d[t])
 
                 for t in self.Tb:
-                    mdl.add_constraint(mdl.sum(s[t][f] for f in self.features) >= d[t])
+                    mdl.add_constraint(b[t] >= -d[t])
 
-            for t in self.Tb:
-                mdl.add_constraint(b[t] <= d[t])
+                if self.name == 'St':
+                    for t in self.Tb:
+                        mdl.add_constraint(mdl.sum(s[t][f] for f in self.features) <= self.max_features)
+                if self.name == 'S1' or self.name == 'St':
+                    mdl.add_constraint(
+                        mdl.sum(s[t][f] for t in self.Tb for f in self.features) <= self.max_features * len(self.Tb))
 
-            for t in self.Tb:
-                mdl.add_constraint(b[t] >= -d[t])
-
-            if self.name == 'St':
+            '''elif self.version == 'univariate':
+                for p in range(len(points)):
+                    p1 = points[p]
+                    for le in range(len(self.Tl)):
+                        for n in self.Ar[le + self.floorTb]:
+                            mdl.add_constraint(
+                                np.dot(dataframe.loc[p1], a[n]) >= b[n] - self.M2 * (1 - z[p, le + self.floorTb]))
+    
+                for p in range(len(points)):
+                    p1 = points[p]
+                    for le in range(len(self.Tl)):
+                        for m in self.Al[le + self.floorTb]:
+                            mdl.add_constraint(
+                                np.dot(dataframe.loc[p1] + self.eps - err * np.ones(len(self.features)), a[m]) + err <= b[
+                                    m] + self.M1 * (1 - z[p, le + self.floorTb]))
                 for t in self.Tb:
-                    mdl.add_constraint(mdl.sum(s[t][f] for f in self.features) <= self.max_features)
-            if self.name == 'S1' or self.name == 'St':
-                mdl.add_constraint(
-                    mdl.sum(s[t][f] for t in self.Tb for f in self.features) <= self.max_features * len(self.Tb))
-
-        elif self.version == 'univariate':
-            for p in range(len(points)):
-                p1 = points[p]
+                    mdl.add_constraint(d[t] == mdl.sum(a[t][f] for f in self.features))
+                for t in self.Tb:
+                    mdl.add_constraint(b[t] <= d[t])
+    
+                for i in range(0, len(self.Tl), 2):
+                    mdl.add_constraint(l[i] <= d[self.find_pt()[i + self.depth]])'''
+            if self.version == 'univariate':
+                Y = np.arange(len(self.classes) * len(points)).reshape(len(points), len(self.classes))
+                for i in range(0, len(points)):
+                    for k in range(0, len(self.classes)):
+                        if y.values[i] == k:
+                            Y[i, k] = 1
+                        else:
+                            Y[i, k] = -1
                 for le in range(len(self.Tl)):
-                    for n in self.Ar[le + self.floorTb]:
+                    for k in range(len(self.classes)):
                         mdl.add_constraint(
-                            np.dot(dataframe.loc[p1], a[n]) >= b[n] - self.M2 * (1 - z[p, le + self.floorTb]))
+                            L[le] >= Nt[le] - Nkt[k, le + self.floorTb] - self.M * (1 - c[k, le + self.floorTb]))
 
-            for p in range(len(points)):
-                p1 = points[p]
                 for le in range(len(self.Tl)):
-                    for m in self.Al[le + self.floorTb]:
+                    for k in range(len(self.classes)):
                         mdl.add_constraint(
-                            np.dot(dataframe.loc[p1] + self.eps - err * np.ones(len(self.features)), a[m]) + err <= b[
-                                m] + self.M1 * (1 - z[p, le + self.floorTb]))
-            for t in self.Tb:
-                mdl.add_constraint(d[t] == mdl.sum(a[t][f] for f in self.features))
-            for t in self.Tb:
-                mdl.add_constraint(b[t] <= d[t])
+                            L[le] <= Nt[le] - Nkt[k, le + self.floorTb] + self.M * c[k, le + self.floorTb])
 
-            for i in range(0, len(self.Tl), 2):
-                mdl.add_constraint(l[i] <= d[self.find_pt()[i + self.depth]])
+                for le in range(len(self.Tl)):
+                    for k in range(len(self.classes)):
+                        mdl.add_constraint(
+                            Nkt[k, le + self.floorTb] == 0.5 * mdl.sum(
+                                (1 + Y[i, k]) * z[i, le + self.floorTb] for i in range(len(points))))
 
-            if len(self.classes) <= len(self.Tl):
-                for k in range(len(self.classes)):
-                    mdl.add_constraint(1 <= mdl.sum(c[k, le + self.floorTb] for le in range(len(self.Tl))))
+                for le in range(len(self.Tl)):
+                    mdl.add_constraint(Nt[le] == mdl.sum(z[p, le + self.floorTb] for p in range(len(points))))
 
-        # OBJECTIVE FUNCTION
-        if self.version == 'multivariate':
-            if self.name == 'OCT-H':
-                mdl.minimize(mdl.sum(L[le] for le in range(len(self.Tl))) + self.alpha * (
-                    mdl.sum(s[t][f] for t in self.Tb for f in self.features)))
-            if self.name == 'S1' or self.name == 'St':
+                for le in range(len(self.Tl)):
+                    mdl.add_constraint(l[le] == mdl.sum(c[k, le + self.floorTb] for k in range(len(self.classes))))
+
+                for p in range(len(points)):
+                    p1 = points[p]
+
+                    for le in range(len(self.Tl)):
+                        for n in self.Ar[le + self.floorTb]:
+                            mdl.add_constraint(
+                                np.dot(dataframe.loc[p1], a[n]) >= b[n] - self.M2 * (1 - z[p, le + self.floorTb]))
+
+                for p in range(len(points)):
+                    p1 = points[p]
+
+                    for le in range(len(self.Tl)):
+                        for m in self.Al[le + self.floorTb]:
+                            mdl.add_constraint(
+                                np.dot(dataframe.loc[p1] + self.eps - err * np.ones(len(self.features)), a[m]) + err <=
+                                b[
+                                    m] + self.M1 * (1 - z[p, le + self.floorTb]))
+
+                for p in range(len(points)):
+                    mdl.add_constraint(mdl.sum(z[p, le + self.floorTb] for le in range(len(self.Tl))) == 1)  #
+
+                for le in range(len(self.Tl)):
+                    for p in range(len(points)):
+                        mdl.add_constraint(z[p, le + self.floorTb] <= l[le])
+
+                for le in range(len(self.Tl)):
+                    mdl.add_constraint(
+                        l[le] * self.Nmin <= mdl.sum(z[p, le + self.floorTb] for p in range(len(points))))
+
+                for t in self.Tb:
+                    mdl.add_constraint(d[t] == mdl.sum(a[t][f] for f in self.features))
+
+                for t in self.Tb:
+                    mdl.add_constraint(b[t] <= d[t])
+                for t in np.delete(self.Tb, 0):
+                    mdl.add_constraint(d[t] <= d[self.parent[t]])
+
+                randa = [np.random.uniform(1 - 1e-1, 1 + 1e-1) for t in self.Tb]
+                randL = [np.random.uniform(1 - 1e-1, 1 + 1e-1) for t in self.Tl]
+
+                for i in range(0, len(self.Tl), 2):
+                    mdl.add_constraint(l[i] <= d[self.find_pt()[i + self.depth]])
+
+            # OBJECTIVE FUNCTION
+            if self.version == 'multivariate':
+                if self.name == 'OCT-H':
+                    mdl.minimize(mdl.sum(L[le] for le in range(len(self.Tl))) + self.alpha * (
+                        mdl.sum(s[t][f] for t in self.Tb for f in self.features)))
+                if self.name == 'S1' or self.name == 'St':
+                    mdl.minimize(
+                        mdl.sum(L[le] for le in range(len(self.Tl))) + self.alpha * mdl.sum(d[t] for t in self.Tb))
+                if self.name == 'LDA':
+                    mdl.minimize(mdl.sum(L[le] for le in range(len(self.Tl))) + self.alpha * (
+                            mdl.sum(d[t] for t in self.Tb) + mdl.sum(
+                        a_hat[t][f] for t in self.Tb for f in self.features) / len(
+                        self.features * len(self.Tb))))
+            elif self.version == 'univariate':
                 mdl.minimize(mdl.sum(L[le] for le in range(len(self.Tl))) + self.alpha * mdl.sum(d[t] for t in self.Tb))
-            if self.name == 'LDA':
-                mdl.minimize(mdl.sum(L[le] for le in range(len(self.Tl))) + self.alpha * (
-                        mdl.sum(d[t] for t in self.Tb) + mdl.sum(
-                    a_hat[t][f] for t in self.Tb for f in self.features) / len(
-                    self.features * len(self.Tb))))
-        elif self.version == 'univariate':
-            mdl.minimize(mdl.sum(L[le] for le in range(len(self.Tl))) + self.alpha * mdl.sum(d[t] for t in self.Tb))
 
-        mdl.print_information()
+            mdl.print_information()
+
+        elif self.relax == 1:
+            if self.version == 'univariate':
+                self.eps = self.find_eps(dataframe2)
+                self.M = self.find_M(dataframe2)
+                self.M1 = self.find_M1(dataframe2)
+                err = min(self.eps)
+
+            elif self.version == 'multivariate':
+                self.M = len(dataframe)
+
+            mdl = Model(name=self.name)
+            mdl.clear()
+            if self.version == 'multivariate':
+                mdl.parameters.emphasis.mip = 4  # TODO SCEGLIERE EMPHASIS (MULTIVARIATE MEGLIO 4)
+
+            Y = np.arange(len(self.classes) * len(points)).reshape(len(points), len(self.classes))
+            for i in range(0, len(points)):
+                for k in range(0, len(self.classes)):
+                    k1 = self.classes[k]
+                    if y.values[i] == k1:
+                        Y[i, k] = 1
+                    else:
+                        Y[i, k] = -1
+            # VARIABLES
+
+            if self.version == 'univariate':
+                a = []
+                for t in self.Tb:
+                    a.append(mdl.continuous_var_list(len(self.features), lb=0, ub=1, name='a%d' % t))
+                b = mdl.continuous_var_list(self.Tb, lb=0,
+                                            name='b')
+
+            elif self.version == 'multivariate':
+                a = []
+                for t in self.Tb:
+                    a.append(mdl.continuous_var_list(len(self.features), ub=1, lb=-1, name='a%d' % t))
+                a_hat = []
+                for t in self.Tb:
+                    a_hat.append(mdl.continuous_var_list(len(self.features), ub=1, lb=-1,
+                                                         name='a_hat%d' % t))
+                if self.name == 'OCT-H' or self.name == 'S1' or self.name == 'St':
+                    s = []
+                    for t in self.Tb:
+                        s.append(mdl.continuous_var_list(len(self.features), lb=0, ub=1, name='s%d' % t))
+                b = mdl.continuous_var_list(self.Tb,
+                                            name='b')  # TODO verificare se anche nel modello multivariate il lower bound di b è zero e eventualmente metterlo
+
+            d = mdl.continuous_var_list(self.Tb, lb=0, ub=1, name='d')
+
+            z = mdl.continuous_var_matrix(Num_points, self.Tl, lb=0, ub=1, name='z')
+
+            l = mdl.continuous_var_list(self.Tl, lb=0, ub=1, name='l')
+
+            c = mdl.continuous_var_matrix(len(self.classes), self.Tl, lb=0, ub=1, name='c')
+
+            L = mdl.continuous_var_list(self.Tl, lb=0, name='L')
+
+            Nt = mdl.continuous_var_list(self.Tl, name='Nt')
+
+            Nkt = mdl.continuous_var_matrix(len(self.classes), self.Tl, name='Nkt')
+
+            # CONSTRAINTS
+            if self.version == 'multivariate':
+
+                for le in range(len(self.Tl)):
+                    for k in range(len(self.classes)):
+                        mdl.add_constraint(
+                            L[le] >= Nt[le] - Nkt[k, le + self.floorTb] - self.M * (1 - c[k, le + self.floorTb]))
+
+                for le in range(len(self.Tl)):
+                    for k in range(len(self.classes)):
+                        mdl.add_constraint(
+                            L[le] <= Nt[le] - Nkt[k, le + self.floorTb] + self.M * c[k, le + self.floorTb])
+
+                for le in range(len(self.Tl)):
+                    for k in range(len(self.classes)):
+                        mdl.add_constraint(
+                            Nkt[k, le + self.floorTb] == 0.5 * mdl.sum(
+                                (1 + Y[i, k]) * z[i, le + self.floorTb] for i in range(len(points))))
+
+                for le in range(len(self.Tl)):
+                    mdl.add_constraint(Nt[le] == mdl.sum(z[p, le + self.floorTb] for p in range(len(points))))
+
+                for le in range(len(self.Tl)):
+                    mdl.add_constraint(l[le] == mdl.sum(c[k, le + self.floorTb] for k in range(len(self.classes))))
+
+                for p in range(len(points)):
+                    mdl.add_constraint(mdl.sum(z[p, le + self.floorTb] for le in range(len(self.Tl))) == 1)
+
+                for le in range(len(self.Tl)):
+                    for p in range(len(points)):
+                        mdl.add_constraint(z[p, le + self.floorTb] <= l[le])
+
+                for le in range(len(self.Tl)):
+                    mdl.add_constraint(
+                        l[le] * self.Nmin <= mdl.sum(z[p, le + self.floorTb] for p in range(len(points))))
+
+                for t in np.delete(self.Tb, 0):
+                    mdl.add_constraint(d[t] <= d[self.parent[t]])
+
+                for p in range(len(points)):
+                    p1 = points[p]
+                    for le in range(len(self.Tl)):
+                        for n in self.Ar[le + self.floorTb]:
+                            mdl.add_constraint(
+                                np.dot(dataframe.loc[p1], a[n]) >= b[n] - self.bigM * (1 - z[p, le + self.floorTb]))
+
+                for p in range(len(points)):
+                    p1 = points[p]
+                    for le in range(len(self.Tl)):
+                        for m in self.Al[le + self.floorTb]:
+                            mdl.add_constraint(
+                                np.dot(dataframe.loc[p1], a[m]) + self.mu <= b[m] + (self.bigM + self.mu) * (
+                                        1 - z[p, le + self.floorTb]))
+                for t in self.Tb:
+                    mdl.add_constraint(d[t] >= mdl.sum(a_hat[t][f] for f in self.features))
+
+                for t in self.Tb:
+                    for f in self.features:
+                        mdl.add_constraint(a_hat[t][f] >= a[t][f])
+
+                for t in self.Tb:
+                    for f in self.features:
+                        mdl.add_constraint(a_hat[t][f] >= -a[t][f])
+                if self.name == 'OCT-H' or self.name == 'S1' or self.name == 'St':
+
+                    for t in self.Tb:
+                        for f in self.features:
+                            mdl.add_constraint(-s[t][f] <= a[t][f])
+
+                    for t in self.Tb:
+                        for f in self.features:
+                            mdl.add_constraint(a[t][f] <= s[t][f])
+
+                    for t in self.Tb:
+                        for f in self.features:
+                            mdl.add_constraint(s[t][f] <= d[t])
+
+                    for t in self.Tb:
+                        mdl.add_constraint(mdl.sum(s[t][f] for f in self.features) >= d[t])
+
+                for t in self.Tb:
+                    mdl.add_constraint(b[t] <= d[t])
+
+                for t in self.Tb:
+                    mdl.add_constraint(b[t] >= -d[t])
+
+                if self.name == 'St':
+                    for t in self.Tb:
+                        mdl.add_constraint(mdl.sum(s[t][f] for f in self.features) <= self.max_features)
+                if self.name == 'S1' or self.name == 'St':
+                    mdl.add_constraint(
+                        mdl.sum(s[t][f] for t in self.Tb for f in self.features) <= self.max_features * len(self.Tb))
+
+            '''elif self.version == 'univariate':
+                for p in range(len(points)):
+                    p1 = points[p]
+                    for le in range(len(self.Tl)):
+                        for n in self.Ar[le + self.floorTb]:
+                            mdl.add_constraint(
+                                np.dot(dataframe.loc[p1], a[n]) >= b[n] - self.M2 * (1 - z[p, le + self.floorTb]))
+
+                for p in range(len(points)):
+                    p1 = points[p]
+                    for le in range(len(self.Tl)):
+                        for m in self.Al[le + self.floorTb]:
+                            mdl.add_constraint(
+                                np.dot(dataframe.loc[p1] + self.eps - err * np.ones(len(self.features)), a[m]) + err <= b[
+                                    m] + self.M1 * (1 - z[p, le + self.floorTb]))
+                for t in self.Tb:
+                    mdl.add_constraint(d[t] == mdl.sum(a[t][f] for f in self.features))
+                for t in self.Tb:
+                    mdl.add_constraint(b[t] <= d[t])
+
+                for i in range(0, len(self.Tl), 2):
+                    mdl.add_constraint(l[i] <= d[self.find_pt()[i + self.depth]])'''
+            if self.version == 'univariate':
+                Y = np.arange(len(self.classes) * len(points)).reshape(len(points), len(self.classes))
+                for i in range(0, len(points)):
+                    for k in range(0, len(self.classes)):
+                        if y.values[i] == k:
+                            Y[i, k] = 1
+                        else:
+                            Y[i, k] = -1
+                for le in range(len(self.Tl)):
+                    for k in range(len(self.classes)):
+                        mdl.add_constraint(
+                            L[le] >= Nt[le] - Nkt[k, le + self.floorTb] - self.M * (1 - c[k, le + self.floorTb]))
+
+                for le in range(len(self.Tl)):
+                    for k in range(len(self.classes)):
+                        mdl.add_constraint(
+                            L[le] <= Nt[le] - Nkt[k, le + self.floorTb] + self.M * c[k, le + self.floorTb])
+
+                for le in range(len(self.Tl)):
+                    for k in range(len(self.classes)):
+                        mdl.add_constraint(
+                            Nkt[k, le + self.floorTb] == 0.5 * mdl.sum(
+                                (1 + Y[i, k]) * z[i, le + self.floorTb] for i in range(len(points))))
+
+                for le in range(len(self.Tl)):
+                    mdl.add_constraint(Nt[le] == mdl.sum(z[p, le + self.floorTb] for p in range(len(points))))
+
+                for le in range(len(self.Tl)):
+                    mdl.add_constraint(l[le] == mdl.sum(c[k, le + self.floorTb] for k in range(len(self.classes))))
+
+                for p in range(len(points)):
+                    p1 = points[p]
+
+                    for le in range(len(self.Tl)):
+                        for n in self.Ar[le + self.floorTb]:
+                            mdl.add_constraint(
+                                np.dot(dataframe.loc[p1], a[n]) >= b[n] - self.M2 * (1 - z[p, le + self.floorTb]))
+
+                for p in range(len(points)):
+                    p1 = points[p]
+
+                    for le in range(len(self.Tl)):
+                        for m in self.Al[le + self.floorTb]:
+                            mdl.add_constraint(
+                                np.dot(dataframe.loc[p1] + self.eps - err * np.ones(len(self.features)), a[m]) + err <=
+                                b[
+                                    m] + self.M1 * (1 - z[p, le + self.floorTb]))
+
+                for p in range(len(points)):
+                    mdl.add_constraint(mdl.sum(z[p, le + self.floorTb] for le in range(len(self.Tl))) == 1)  #
+
+                for le in range(len(self.Tl)):
+                    for p in range(len(points)):
+                        mdl.add_constraint(z[p, le + self.floorTb] <= l[le])
+
+                for le in range(len(self.Tl)):
+                    mdl.add_constraint(
+                        l[le] * self.Nmin <= mdl.sum(z[p, le + self.floorTb] for p in range(len(points))))
+
+                for t in self.Tb:
+                    mdl.add_constraint(d[t] == mdl.sum(a[t][f] for f in self.features))
+
+                for t in self.Tb:
+                    mdl.add_constraint(b[t] <= d[t])
+                for t in np.delete(self.Tb, 0):
+                    mdl.add_constraint(d[t] <= d[self.parent[t]])
+
+                randa = [np.random.uniform(1 - 1e-1, 1 + 1e-1) for t in self.Tb]
+                randL = [np.random.uniform(1 - 1e-1, 1 + 1e-1) for t in self.Tl]
+
+                for i in range(0, len(self.Tl), 2):
+                    mdl.add_constraint(l[i] <= d[self.find_pt()[i + self.depth]])
+
+            # OBJECTIVE FUNCTION
+            if self.version == 'multivariate':
+                if self.name == 'OCT-H':
+                    mdl.minimize(mdl.sum(L[le] for le in range(len(self.Tl))) + self.alpha * (
+                        mdl.sum(s[t][f] for t in self.Tb for f in self.features)))
+                if self.name == 'S1' or self.name == 'St':
+                    mdl.minimize(
+                        mdl.sum(L[le] for le in range(len(self.Tl))) + self.alpha * mdl.sum(d[t] for t in self.Tb))
+                if self.name == 'LDA':
+                    mdl.minimize(mdl.sum(L[le] for le in range(len(self.Tl))) + self.alpha * (
+                            mdl.sum(d[t] for t in self.Tb) + mdl.sum(
+                        a_hat[t][f] for t in self.Tb for f in self.features) / len(
+                        self.features * len(self.Tb))))
+            elif self.version == 'univariate':
+                mdl.minimize(mdl.sum(L[le] for le in range(len(self.Tl))) + self.alpha * mdl.sum(d[t] for t in self.Tb))
+
+            mdl.print_information()
 
         return mdl
 
@@ -397,9 +739,10 @@ class OptimalTree(BaseEstimator):
                 count += 1
 
         for t in self.Tb:  # len(skval)
-            if sk_features[t] >= 0:
-                i = list(idx).index(t)
-                m.add_var_value(('d_%d' % i), 1)
+            if t < len(sk_features):
+                if sk_features[t] >= 0:
+                    i = list(idx).index(t)
+                    m.add_var_value(('d_%d' % i), 1)
         for leaf in self.Tl:
             m.add_var_value(('l_%d' % leaf), 1)
 
@@ -426,12 +769,14 @@ class OptimalTree(BaseEstimator):
 
         sol = self.find_cart(dataframe, dataframe2, y)
         if self.version == 'univariate':
-            sol.set_time_limit(600)  # TODO METTERE TIME LIMIT PER LA SOLUZIONE FINALE DEL MODELLO UNIVARIATE COL CART (1800)
+            sol.set_time_limit(
+                180)  # TODO METTERE TIME LIMIT PER LA SOLUZIONE FINALE DEL MODELLO UNIVARIATE COL CART (1800)
+            sol.export('/Users/giuliaciarimboli/Desktop')
 
             self.csvrow[0] = self.dataset
             self.csvrow[2] = len(self.features)
             self.csvrow[3] = self.version
-            self.csvrow[4] = self.name
+            self.csvrow[4] = self.mipstart
             self.csvrow[5] = self.depth
             self.csvrow[6] = len(self.Tb)
             self.csvrow[7] = len(self.Tl)
@@ -441,7 +786,7 @@ class OptimalTree(BaseEstimator):
             self.csvrow[13] = sol.number_of_constraints
 
             s = sol.solve(log_output=True)
-
+            sol.print_solution()
             activenodes = 0
             activeleaves = 0
             for t in range(len(self.Tb)):
@@ -452,11 +797,10 @@ class OptimalTree(BaseEstimator):
                     activeleaves += 1
             self.csvrow[8] = activenodes
             self.csvrow[9] = activeleaves
-            self.csvrow[20] = int(s.solve_details.time)
-            self.csvrow[21] = s.solve_details.mip_relative_gap
-            self.csvrow[22] = '?'
-            self.csvrow[23] = s.solve_details.best_bound
-            self.csvrow[24] = s.objective_value
+            self.csvrow[24] = int(s.solve_details.time)
+            self.csvrow[25] = s.solve_details.mip_relative_gap
+            self.csvrow[26] = '?'
+            self.csvrow[27] = s.objective_value
 
             self.draw_graph_univariate(s)
             train_error = 0
@@ -481,13 +825,14 @@ class OptimalTree(BaseEstimator):
             return a_test, b_test, c_test, train_error
 
         elif self.version == 'multivariate':
-            sol.set_time_limit(240) # TODO METTERE TIME LIMIT PER LA RISOLUZIONE DEL WARM START DEL MULTIVARIATO CON PROFONDITA 1 (240)
+            sol.set_time_limit(
+                60)  # TODO METTERE TIME LIMIT PER LA RISOLUZIONE DEL WARM START DEL MULTIVARIATO CON PROFONDITA 1 (240)
             sol.solve(log_output=True)
             return sol
 
     def find_oct_warmstart(self, dataframe, dataframe2, y):
         mod = self.find_cart(dataframe, dataframe2, y)
-        mod.set_time_limit(240) # TODO TIME LIMIT PER RISOLVERE IL WARM START OCT CON DEPTH= D-1
+        mod.set_time_limit(60)  # TODO TIME LIMIT PER RISOLVERE IL WARM START OCT CON DEPTH= D-1
         s = mod.solve(log_output=True)
         mod.print_solution()
         self.draw_graph_univariate(s)
@@ -551,7 +896,7 @@ class OptimalTree(BaseEstimator):
         self.csvrow[0] = self.dataset
         self.csvrow[2] = len(self.features)
         self.csvrow[3] = self.version
-        self.csvrow[4] = self.name
+        self.csvrow[4] = self.mipstart
         self.csvrow[5] = self.depth
         self.csvrow[6] = len(self.Tb)
         self.csvrow[7] = len(self.Tl)
@@ -590,12 +935,12 @@ class OptimalTree(BaseEstimator):
             j += 1
         print(s.check_as_mip_start())
         sol.add_mip_start(s)
-        sol.set_time_limit(600) # TODO TIME LIMIT PER TROVARE SOLUZIONE FINALE UNIVARIATE_OCT
+        sol.set_time_limit(60)  # TODO TIME LIMIT PER TROVARE SOLUZIONE FINALE UNIVARIATE_OCT
         # mdl.parameters.mip.tolerances.mipgap(0.1)
-        #sol.parameters.emphasis.mip = 0
+        # sol.parameters.emphasis.mip = 0
         print('finding solution with OCT as MIP START:')
         s = sol.solve(log_output=True)
-
+        sol.print_solution()
         activenodes = 0
         activeleaves = 0
         for t in range(len(self.Tb)):
@@ -606,11 +951,10 @@ class OptimalTree(BaseEstimator):
                 activeleaves += 1
         self.csvrow[8] = activenodes
         self.csvrow[9] = activeleaves
-        self.csvrow[20] = int(s.solve_details.time)
-        self.csvrow[21] = s.solve_details.mip_relative_gap
-        self.csvrow[22] = '?'
-        self.csvrow[23] = s.solve_details.best_bound
-        self.csvrow[24] = s.objective_value
+        self.csvrow[24] = int(s.solve_details.time)
+        self.csvrow[25] = s.solve_details.mip_relative_gap
+        self.csvrow[26] = '?'
+        self.csvrow[27] = s.objective_value
 
         # GRAPH
         self.draw_graph_univariate(s)
@@ -963,9 +1307,9 @@ class OptimalTree(BaseEstimator):
         print(mm.check_as_mip_start())
         modello.add_mip_start(mm)
 
-        modello.set_time_limit(240) #TODO TIME LIMIT PER TROVARE SOLUZIONE FINALE MULTIVARIATE
+        modello.set_time_limit(60)  # TODO TIME LIMIT PER TROVARE SOLUZIONE FINALE MULTIVARIATE
 
-        #modello.parameters.emphasis.mip = 4
+        # modello.parameters.emphasis.mip = 4
         self.csvrow[0] = self.dataset
         self.csvrow[2] = len(self.features)
         self.csvrow[3] = self.version
@@ -990,11 +1334,10 @@ class OptimalTree(BaseEstimator):
                 activeleaves += 1
         self.csvrow[8] = activenodes
         self.csvrow[9] = activeleaves
-        self.csvrow[20] = int(modello.solve_details.time)
-        self.csvrow[21] = modello.solve_details.mip_relative_gap
-        self.csvrow[22] = '?'
-        self.csvrow[23] = modello.solve_details.best_bound
-        self.csvrow[24] = modello.objective_value
+        self.csvrow[24] = int(modello.solve_details.time)
+        self.csvrow[25] = modello.solve_details.mip_relative_gap
+        self.csvrow[26] = '?'  # Cplex.get_dettime()
+        self.csvrow[27] = modello.objective_value
 
         modello.print_solution()
 
@@ -1054,7 +1397,7 @@ class OptimalTree(BaseEstimator):
 
         return a_test, b_test, c_test, train_error
 
-    def test(self, dataframe, dataframe2, y, d, modello, dataframe_test, y_test, warm_start):
+    def test(self, dataframe, dataframe2, y, d, modello, dataframe_test, y_test, warm_start, relaxation_value):
 
         T = pow(2, (d + 1)) - 1  # nodes number
         floorTb = int(floor(T / 2))  # number of branch nodes
@@ -1070,7 +1413,7 @@ class OptimalTree(BaseEstimator):
                 a_test, b_test, c_test, train_error = self.fit_with_cart(dataframe, dataframe2, y)
             else:
                 a_test, b_test, c_test, train_error = self.fit_with_oct_mip_start(dataframe, dataframe2, y, warm_start)
-        leaves = []
+        ''' leaves = []
         prediction = []
         apply = np.zeros((len(dataframe_test), d + 1), dtype=np.int8)
         for p in range(len(dataframe_test)):
@@ -1080,18 +1423,18 @@ class OptimalTree(BaseEstimator):
                     apply[p][i + 1] = 2 * j + 1
                 else:
                     apply[p][i + 1] = 2 * j + 2
-            leaves.insert(p, apply[p][d])
-
-        print(apply)
-        count = 0
+            leaves.insert(p, apply[p][d])'''
+        apply = self.apply(d, dataframe_test, a_test, b_test)
+        leaves = self.leaves(apply, dataframe_test)
+        '''count = 0
         for p in leaves:
             leaf = list(Tl).index(p)
             for k in range(len(classes)):
                 if c_test[leaf][k] == 1:
                     prediction.insert(count, classes[k])
-                    count += 1
-
-        print(leaves)
+                    count += 1'''
+        prediction = self.prediction(leaves, Tl, classes, c_test)
+        '''print(leaves)
         print(prediction)
         print(list(y_test))
         errors = 0
@@ -1100,8 +1443,10 @@ class OptimalTree(BaseEstimator):
                 errors += 1
         test_error = errors / len(y_test)
         print('test_error:', test_error)
-        print('train_error:', train_error)
+        print('train_error:', train_error)'''
 
+        test_error = self.testerror(prediction, dataframe_test, y_test)
+        '''
         confusion_matrix = np.zeros((4))
         tp = 0
         fp = 0
@@ -1121,35 +1466,122 @@ class OptimalTree(BaseEstimator):
         confusion_matrix[2] = fn
         confusion_matrix[3] = tn
 
+        print(confusion_matrix)'''
+
+        tp, fp, fn, tn, confusion_matrix = self.confusionmatrix(prediction, y_test)
+        print(apply)
+        print(prediction)
+        print(list(y_test))
         print(confusion_matrix)
         self.csvrow[1] = len(dataframe) + len(dataframe_test)
         self.csvrow[14] = train_error
-        self.csvrow[15] = test_error
-        self.csvrow[16] = tp
-        self.csvrow[17] = fp
-        self.csvrow[18] = fn
-        self.csvrow[19] = tn
+        self.csvrow[19] = test_error
+        self.csvrow[20] = tp
+        self.csvrow[21] = fp
+        self.csvrow[22] = fn
+        self.csvrow[23] = tn
 
+        apply_train = self.apply(d, dataframe, a_test, b_test)
+        leaves_train = self.leaves(apply_train, dataframe)
+        prediction_train = self.prediction(leaves_train, Tl, classes, c_test)
+        tp_train, fp_train, fn_train, tn_train, confusion_matrix_train = self.confusionmatrix(prediction_train, y)
+
+        self.csvrow[15] = tp_train
+        self.csvrow[16] = fp_train
+        self.csvrow[17] = fn_train
+        self.csvrow[18] = tn_train
+        self.csvrow[28] = relaxation_value
+        print('train')
+        print(apply_train)
+        print(leaves_train)
+        print(prediction_train)
+        print(list(y))
+        print(confusion_matrix_train)
         self.write_on_csv()
 
         return
 
+    def apply(self, d, dataframe_test, a_test, b_test):
+        leaves = []
+        prediction = []
+        apply = np.zeros((len(dataframe_test), d + 1), dtype=np.int8)
+        for p in range(len(dataframe_test)):
+            for i in range(d):
+                j = int(apply[p][i])
+                if np.dot(a_test[j], dataframe_test.loc[p]) + 1e-7 < b_test[j]:
+                    apply[p][i + 1] = 2 * j + 1
+                else:
+                    apply[p][i + 1] = 2 * j + 2
+            leaves.insert(p, apply[p][d])
+
+        return apply
+
+    def leaves(self, apply, dataframe_test):
+        leaves = []
+        for p in range(len(dataframe_test)):
+            leaves.insert(p, apply[p][d])
+        return leaves
+
+    def prediction(self, leaves, Tl, classes, c_test):
+        count = 0
+        prediction = []
+
+        for p in leaves:
+            leaf = list(Tl).index(p)
+            for k in range(len(classes)):
+                if c_test[leaf][k] == 1:
+                    prediction.insert(count, classes[k])
+                    count += 1
+        return prediction
+
+    def testerror(self, prediction, dataframe_test, y_test):
+        errors = 0
+        for p in range(len(dataframe_test)):
+            if prediction[p] != list(y_test)[p]:
+                errors += 1
+        test_error = errors / len(y_test)
+        return test_error
+
+    def confusionmatrix(self, prediction, y_test):
+        confusion_matrix = np.zeros((4))
+        tp = 0
+        fp = 0
+        fn = 0
+        tn = 0
+        for i in range(len(prediction)):
+            if prediction[i] == 1 and list(y_test)[i] == 1:
+                tp += 1
+            elif prediction[i] == 1 and list(y_test)[i] == 0:
+                fp += 1
+            elif prediction[i] == 0 and list(y_test)[i] == 1:
+                fn += 1
+            elif prediction[i] == 0 and list(y_test)[i] == 0:
+                tn += 1
+        confusion_matrix[0] = tp
+        confusion_matrix[1] = fp
+        confusion_matrix[2] = fn
+        confusion_matrix[3] = tn
+        return tp, fp, fn, tn, confusion_matrix
+
     def write_on_csv(self):
-        with open('/Users/giuliaciarimboli/Desktop/OptimalTreeResults.csv', 'a', newline='') as csvfile:
+        with open('OptimalTreeResults.csv', 'a',
+                  newline='') as csvfile:  # '/Users/giuliaciarimboli/Desktop/OptimalTreeResults.csv'
             writer = csv.reader(csvfile, delimiter=',')
             writer = csv.writer(csvfile)
             writer.writerow(self.csvrow)
         return
 
+
 depths = [2, 3, 4]
 a = 0.5
 N = 1  # int(3 / 100 * (len(df) + len(df_test)))
 F = 3  # len(df.columns)
-versions = ['multivariate','univariate'] # possibilities: 'multivariate', 'univariate'
+versions = ['univariate', 'multivariate']  # 'univariate'] # possibilities: 'multivariate', 'univariate'
 names = ['OCT-H', 'S1', 'St', 'LDA']  # possibilities: 'OCT-H', 'S1', 'St', 'LDA'
-datasets = ['ionosphere.csv', 'ThoracicSurgery.csv']
-mipstarts = ['CART', 'OCT'] #possibilities: 'CART', 'OCT'
-
+datasets = ['acute-inflammations-1.csv', 'fertility.csv', 'parkinsons.csv', 'SPECTF.csv',
+            'connectionist-bench-sonar.csv', 'ionosphere.csv', 'ThoracicSurgery.csv', 'climate-model-crashes.csv',
+            'banknote-authentication.csv', 'seismic-bumps.csv']
+mipstarts = ['CART', 'OCT']  # possibilities: 'CART', 'OCT'
 for trainset in datasets:
     for d in depths:
         for v in versions:
@@ -1161,8 +1593,10 @@ for trainset in datasets:
             df_scaled = scaler.fit(X_train)  # save object fitted only with train data
             df = scaler.transform(X_train)
             df = pd.DataFrame(df)  # scaled dataframe
-            df2 = df
+            df2 = scaler.transform(X_train)
+            df2 = pd.DataFrame(df2)
             df_test = scaler.transform(X_test)  # apply same transformation to test set
+
             for i in range(len(df_test)):
                 for j in range(len(df_test[0])):
                     if df_test[i][j] > 1:
@@ -1171,21 +1605,35 @@ for trainset in datasets:
                         df_test[i][j] = 0
             df_test = pd.DataFrame(df_test)
             if v == 'univariate':
-                if d>1:
+                if d > 1:
                     for m in mipstarts:
-                        t = OptimalTree(depth=d, alpha=a, Nmin=N, version=v, mipstart=m, dataset=trainset)
-                        print('RISOLVO IL MODELLO %s CON WARM START %s PER IL DATASET %s CON PROFONDITA %d' % (v, m, trainset, d))
+                        t = OptimalTree(depth=d, alpha=a, Nmin=N, version=v, mipstart=m, dataset=trainset, relax=0)
+                        t_relax = OptimalTree(depth=d, alpha=a, Nmin=N, version=v, mipstart=m, dataset=trainset,
+                                              relax=1)
+                        print('RISOLVO IL MODELLO %s CON WARM START %s PER IL DATASET %s CON PROFONDITA %d' % (
+                        v, m, trainset, d))
                         if m == 'CART':
-                            f2 = t.test(df, df2, y_train, d, None, df_test, y_test, None)
+                            relax_model = t_relax.model(df, df2, y_train)
+                            relaxation = relax_model.solve(log_output=True)
+                            relaxation_value = relaxation.objective_value
+                            f2 = t.test(df, df2, y_train, d, None, df_test, y_test, None, relaxation_value)
                         elif m == 'OCT':
                             warm = OptimalTree(depth=d - 1, alpha=a, Nmin=N, version=v, mipstart=m, dataset=trainset)
+                            relax_model = t_relax.model(df, df2, y_train)
+                            relaxation = relax_model.solve(log_output=True)
+                            relaxation_value = relaxation.objective_value
                             ws_ = warm.find_oct_warmstart(df, df2, y_train)
-                            f = t.test(df, df2, y_train, d, None, df_test, y_test, ws_)
+                            f = t.test(df, df2, y_train, d, None, df_test, y_test, ws_, relaxation_value)
 
             elif v == 'multivariate':
                 for n in names:
                     print('RISOLVO IL MODELLO %s %s PER IL DATASET %s CON PROFONDITA %d' % (v, n, trainset, d))
                     t = OptimalTree(depth=d, Nmin=N, alpha=a, max_features=F, version=v, name=n, dataset=trainset)
+                    t_relax = OptimalTree(depth=d, Nmin=N, alpha=a, max_features=F, version=v, name=n, dataset=trainset,
+                                          relax=1)
                     modello = t.model(df, df2, y_train)
+                    modello_relax = t_relax.model(df, df2, y_train)
+                    relaxation = modello_relax.solve(log_output=True)
+                    relaxation_value = relaxation.objective_value
                     warm = OptimalTree(depth=1, alpha=a, Nmin=N, max_features=F, name=n, dataset=trainset)
-                    ws = warm.test(df, df2, y_train, d, modello, df_test, y_test, None)
+                    ws = warm.test(df, df2, y_train, d, modello, df_test, y_test, None, relaxation_value)
