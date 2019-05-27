@@ -5,11 +5,11 @@ from sklearn.preprocessing import MinMaxScaler
 from sklearn import tree
 import graphviz
 import numpy as np
-df = pd.read_csv('ThoraricSurgery.csv', header=None)
-clf = DecisionTreeClassifier(max_depth=2, min_samples_leaf=10, max_features=1, random_state=1)
+df = pd.read_csv('ThoracicSurgery.csv', header=None)
+clf = DecisionTreeClassifier(max_depth=2, min_samples_leaf=1, random_state=1)
 y = df[0]
 df = df[df.columns[1:]]
-X_train, X_test, y_train, y_test = train_test_split(df, y, test_size=0, random_state=1)
+X_train, X_test, y_train, y_test = train_test_split(df, y, test_size=0.25, random_state=1)
 
 scaler = MinMaxScaler()
 df_scaled = scaler.fit(X_train)  # save object fitted only with train data
@@ -27,8 +27,6 @@ for i in range(len(df_test)):
 df_test = pd.DataFrame(df_test)'''
 
 f = clf.fit(df, y_train)
-print(clf.score(df, y_train))
-print(clf.apply(df))
 #print(clf.decision_path(df))
 #print(clf.apply(df_test))
 #print(clf.decision_path(df_test))
@@ -56,9 +54,9 @@ children_left = clf.tree_.children_left
 children_right = clf.tree_.children_right
 feature = clf.tree_.feature
 threshold = clf.tree_.threshold
-print(n_nodes)
-print(children_left)
-print(children_right)
+#print(n_nodes)
+#print(children_left)
+#print(children_right)
 print(feature)
 print(threshold)
 
@@ -72,11 +70,8 @@ j=1
 left = clf.tree_.children_left
 right = clf.tree_.children_right
 for i in range(len(clf.tree_.children_left)):
-    print('i',i)
-    print(idx)
     if idx[i]>=0:
         node = idx[i]
-        print(node)
     if clf.tree_.children_left[node]>0:
         idx.insert(j, clf.tree_.children_left[node])
         j+=1

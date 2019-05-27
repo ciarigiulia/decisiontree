@@ -11,7 +11,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.tree import DecisionTreeClassifier
 from sklearn import tree
-import graphviz
+#import graphviz
 import csv
 
 
@@ -167,8 +167,6 @@ class OptimalTree(BaseEstimator):
 
             mdl = Model(name=self.name)
             mdl.clear()
-            if self.version == 'multivariate':
-                mdl.parameters.emphasis.mip = 4  # TODO SCEGLIERE EMPHASIS (MULTIVARIATE MEGLIO 4)
 
             Y = np.arange(len(self.classes) * len(points)).reshape(len(points), len(self.classes))
             for i in range(0, len(points)):
@@ -185,8 +183,7 @@ class OptimalTree(BaseEstimator):
                 for t in self.Tb:
                     a.append(mdl.binary_var_list(len(self.features), name='a%d' % t))
                 b = mdl.continuous_var_list(self.Tb, lb=0,
-                                            name='b')  # TODO verificare se anche nel modello multivariate il lower bound di b è zero e eventualmente metterlo
-
+                                            name='b')
             elif self.version == 'multivariate':
                 a = []
                 for t in self.Tb:
@@ -199,7 +196,7 @@ class OptimalTree(BaseEstimator):
                     s = []
                     for t in self.Tb:
                         s.append(mdl.binary_var_list(len(self.features), name='s%d' % t))
-                b = mdl.continuous_var_list(self.Tb,
+                b = mdl.continuous_var_list(self.Tb, lb=-1, ub=1,
                                             name='b')  # TODO verificare se anche nel modello multivariate il lower bound di b è zero e eventualmente metterlo
 
             d = mdl.binary_var_list(self.Tb, name='d')
@@ -218,7 +215,7 @@ class OptimalTree(BaseEstimator):
 
             # CONSTRAINTS
             if self.version == 'multivariate':
-
+                #mdl.add_constraint(d[0] == 1)
                 for le in range(len(self.Tl)):
                     for k in range(len(self.classes)):
                         mdl.add_constraint(
@@ -403,6 +400,9 @@ class OptimalTree(BaseEstimator):
 
                 for i in range(0, len(self.Tl), 2):
                     mdl.add_constraint(l[i] <= d[self.find_pt()[i + self.depth]])
+                if len(self.classes) <= len(self.Tl) and self.dataset != 'seismic-bumps.csv':
+                    for k in range(len(self.classes)):
+                        mdl.add_constraint(1 <= mdl.sum(c[k, le + self.floorTb] for le in range(len(self.Tl))))
 
             # OBJECTIVE FUNCTION
             if self.version == 'multivariate':
@@ -434,8 +434,8 @@ class OptimalTree(BaseEstimator):
 
             mdl = Model(name=self.name)
             mdl.clear()
-            if self.version == 'multivariate':
-                mdl.parameters.emphasis.mip = 4  # TODO SCEGLIERE EMPHASIS (MULTIVARIATE MEGLIO 4)
+            #if self.version == 'multivariate':
+            #    mdl.parameters.emphasis.mip = 0  # TODO SCEGLIERE EMPHASIS (MULTIVARIATE MEGLIO 4)
 
             Y = np.arange(len(self.classes) * len(points)).reshape(len(points), len(self.classes))
             for i in range(0, len(points)):
@@ -467,7 +467,7 @@ class OptimalTree(BaseEstimator):
                     for t in self.Tb:
                         s.append(mdl.continuous_var_list(len(self.features), lb=0, ub=1, name='s%d' % t))
                 b = mdl.continuous_var_list(self.Tb,
-                                            name='b')  # TODO verificare se anche nel modello multivariate il lower bound di b è zero e eventualmente metterlo
+                                            name='b')
 
             d = mdl.continuous_var_list(self.Tb, lb=0, ub=1, name='d')
 
@@ -770,7 +770,7 @@ class OptimalTree(BaseEstimator):
         sol = self.find_cart(dataframe, dataframe2, y)
         if self.version == 'univariate':
             sol.set_time_limit(
-                180)  # TODO METTERE TIME LIMIT PER LA SOLUZIONE FINALE DEL MODELLO UNIVARIATE COL CART (1800)
+                3600)  # TODO METTERE TIME LIMIT PER LA SOLUZIONE FINALE DEL MODELLO UNIVARIATE COL CART (1800)
             sol.export('/Users/giuliaciarimboli/Desktop')
 
             self.csvrow[0] = self.dataset
@@ -826,13 +826,13 @@ class OptimalTree(BaseEstimator):
 
         elif self.version == 'multivariate':
             sol.set_time_limit(
-                60)  # TODO METTERE TIME LIMIT PER LA RISOLUZIONE DEL WARM START DEL MULTIVARIATO CON PROFONDITA 1 (240)
+                240)  # TODO METTERE TIME LIMIT PER LA RISOLUZIONE DEL WARM START DEL MULTIVARIATO CON PROFONDITA 1 (240)
             sol.solve(log_output=True)
             return sol
 
     def find_oct_warmstart(self, dataframe, dataframe2, y):
         mod = self.find_cart(dataframe, dataframe2, y)
-        mod.set_time_limit(60)  # TODO TIME LIMIT PER RISOLVERE IL WARM START OCT CON DEPTH= D-1
+        mod.set_time_limit(1800)  # TODO TIME LIMIT PER RISOLVERE IL WARM START OCT CON DEPTH= D-1
         s = mod.solve(log_output=True)
         mod.print_solution()
         self.draw_graph_univariate(s)
@@ -935,7 +935,7 @@ class OptimalTree(BaseEstimator):
             j += 1
         print(s.check_as_mip_start())
         sol.add_mip_start(s)
-        sol.set_time_limit(60)  # TODO TIME LIMIT PER TROVARE SOLUZIONE FINALE UNIVARIATE_OCT
+        sol.set_time_limit(3600)  # TODO TIME LIMIT PER TROVARE SOLUZIONE FINALE UNIVARIATE_OCT
         # mdl.parameters.mip.tolerances.mipgap(0.1)
         # sol.parameters.emphasis.mip = 0
         print('finding solution with OCT as MIP START:')
@@ -1307,7 +1307,7 @@ class OptimalTree(BaseEstimator):
         print(mm.check_as_mip_start())
         modello.add_mip_start(mm)
 
-        modello.set_time_limit(60)  # TODO TIME LIMIT PER TROVARE SOLUZIONE FINALE MULTIVARIATE
+        modello.set_time_limit(3600)  # TODO TIME LIMIT PER TROVARE SOLUZIONE FINALE MULTIVARIATE
 
         # modello.parameters.emphasis.mip = 4
         self.csvrow[0] = self.dataset
@@ -1572,18 +1572,42 @@ class OptimalTree(BaseEstimator):
         return
 
 
-depths = [2, 3, 4]
-a = 0.5
+depths = [2, 4]
 N = 1  # int(3 / 100 * (len(df) + len(df_test)))
 F = 3  # len(df.columns)
-versions = ['univariate', 'multivariate']  # 'univariate'] # possibilities: 'multivariate', 'univariate'
+versions = ['multivariate']  # 'univariate'] # possibilities: 'multivariate', 'univariate'
 names = ['OCT-H', 'S1', 'St', 'LDA']  # possibilities: 'OCT-H', 'S1', 'St', 'LDA'
-datasets = ['acute-inflammations-1.csv', 'fertility.csv', 'parkinsons.csv', 'SPECTF.csv',
+'''alphas = [[3.333333333,	1,428571429	,0.666666667],
+          [1.851851852,0.793650794, 0.37037037],
+          [1.477272727,	0.633116883, 0.295454545],
+          [1.720588235,	0.737394958, 0.344117647],
+          [4.895833333,	2.098214286,	0.979166667],
+          [5,	2.142857143,	1],
+          [0.303030303,	0.12987013,	0.060606061],
+          [0.577777778,	0.247619048,	0.115555556],
+          [57.16666667,	24.5,	11.43333333],
+          [23.92592593,	10.25396825,	4.785185185]]'''
+
+alphas= [[3,	1,	  1],
+        [1,	1,	1],
+        [1,	1,	1],
+        [1,	1,	1],
+        [1,	1,	1],
+        [1,	1,	1],
+        [1,	1,	1],
+        [1,	1,	1],
+        [50, 21, 10],
+        [3, 1,	1]]
+datasets = ['acute-inflammations-1.csv', 'fertility.csv', 'parkinsons.csv', 'spectf80.csv',
             'connectionist-bench-sonar.csv', 'ionosphere.csv', 'ThoracicSurgery.csv', 'climate-model-crashes.csv',
             'banknote-authentication.csv', 'seismic-bumps.csv']
 mipstarts = ['CART', 'OCT']  # possibilities: 'CART', 'OCT'
+count=-1
 for trainset in datasets:
+    count+=1
     for d in depths:
+        j = d-2
+        a=alphas[count][j]
         for v in versions:
             df = pd.read_csv(trainset, header=None)
             y = df[0]
@@ -1611,7 +1635,7 @@ for trainset in datasets:
                         t_relax = OptimalTree(depth=d, alpha=a, Nmin=N, version=v, mipstart=m, dataset=trainset,
                                               relax=1)
                         print('RISOLVO IL MODELLO %s CON WARM START %s PER IL DATASET %s CON PROFONDITA %d' % (
-                        v, m, trainset, d))
+                            v, m, trainset, d))
                         if m == 'CART':
                             relax_model = t_relax.model(df, df2, y_train)
                             relaxation = relax_model.solve(log_output=True)
