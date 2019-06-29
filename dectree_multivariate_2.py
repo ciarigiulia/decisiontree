@@ -212,7 +212,6 @@ class OptimalTree(BaseEstimator):
             Nt = mdl.continuous_var_list(self.Tl, name='Nt')
 
             Nkt = mdl.continuous_var_matrix(len(self.classes), self.Tl, name='Nkt')
-
             # CONSTRAINTS
             if self.version == 'multivariate':
                 #mdl.add_constraint(d[0] == 1)
@@ -298,6 +297,10 @@ class OptimalTree(BaseEstimator):
 
                 for t in self.Tb:
                     mdl.add_constraint(b[t] >= -d[t])
+                if self.dataset != 'balance-scale.csv' and self.version!= 'S1':
+                    if len(self.classes) <= len(self.Tl) and self.dataset != 'wall-robot2.csv' and self.dataset != 'car.csv' and self.dataset != 'contraceptive.csv':
+                        for k in range(len(self.classes)):
+                            mdl.add_constraint(1 <= mdl.sum(c[k, le + self.floorTb] for le in range(len(self.Tl))))
 
                 if self.name == 'St':
                     for t in self.Tb:
@@ -767,7 +770,10 @@ class OptimalTree(BaseEstimator):
 
     def fit_with_cart(self, dataframe, dataframe2, y):
 
-        sol = self.find_cart(dataframe, dataframe2, y)
+        if self.dataset == 'wall-robot2.csv' or self.dataset == 'thyroid-new.csv':
+            sol = self.model(dataframe, dataframe2, y)
+        else:
+            sol = self.find_cart(dataframe, dataframe2, y)
         if self.version == 'univariate':
             sol.set_time_limit(
                 3600)  # TODO METTERE TIME LIMIT PER LA SOLUZIONE FINALE DEL MODELLO UNIVARIATE COL CART (1800)
@@ -826,7 +832,7 @@ class OptimalTree(BaseEstimator):
 
         elif self.version == 'multivariate':
             sol.set_time_limit(
-                240)  # TODO METTERE TIME LIMIT PER LA RISOLUZIONE DEL WARM START DEL MULTIVARIATO CON PROFONDITA 1 (240)
+                30)  # TODO METTERE TIME LIMIT PER LA RISOLUZIONE DEL WARM START DEL MULTIVARIATO CON PROFONDITA 1 (240)
             sol.solve(log_output=True)
             return sol
 
@@ -906,6 +912,7 @@ class OptimalTree(BaseEstimator):
         self.csvrow[13] = sol.number_of_constraints
 
         s = SolveSolution(sol)
+        self.draw_graph_univariate(s)
         i = 0
         for t in self.Tb:
             s.add_var_value('b_%d' % (t), warm_start[1][t])
@@ -994,7 +1001,7 @@ class OptimalTree(BaseEstimator):
             # g.get_node(t).attr['color']='red'
             for f in range(len(self.features)):
                 if sol.get_value('a' + str(t) + '_' + str(f)) == 1:
-                    g.get_node(t).attr['label'] = str('X[%d]' % (f)) + str('<=') + str(
+                    g.get_node(t).attr['label'] = str('X[%d]' % (f)) + str(' < ') + str(
                         '%.3f' % (sol.get_value('b_' + str(t))))
         for leaf in self.Tl:
             if sol.get_value('l_' + str(leaf)) == 0:  # these leaves haven't got points
@@ -1307,7 +1314,7 @@ class OptimalTree(BaseEstimator):
         print(mm.check_as_mip_start())
         modello.add_mip_start(mm)
 
-        modello.set_time_limit(3600)  # TODO TIME LIMIT PER TROVARE SOLUZIONE FINALE MULTIVARIATE
+        modello.set_time_limit(60)  # TODO TIME LIMIT PER TROVARE SOLUZIONE FINALE MULTIVARIATE
 
         # modello.parameters.emphasis.mip = 4
         self.csvrow[0] = self.dataset
@@ -1572,22 +1579,11 @@ class OptimalTree(BaseEstimator):
         return
 
 
-depths = [2, 4]
+depths = [2]
 N = 1  # int(3 / 100 * (len(df) + len(df_test)))
 F = 3  # len(df.columns)
 versions = ['multivariate']  # 'univariate'] # possibilities: 'multivariate', 'univariate'
-names = ['OCT-H', 'S1', 'St', 'LDA']  # possibilities: 'OCT-H', 'S1', 'St', 'LDA'
-'''alphas = [[3.333333333,	1,428571429	,0.666666667],
-          [1.851851852,0.793650794, 0.37037037],
-          [1.477272727,	0.633116883, 0.295454545],
-          [1.720588235,	0.737394958, 0.344117647],
-          [4.895833333,	2.098214286,	0.979166667],
-          [5,	2.142857143,	1],
-          [0.303030303,	0.12987013,	0.060606061],
-          [0.577777778,	0.247619048,	0.115555556],
-          [57.16666667,	24.5,	11.43333333],
-          [23.92592593,	10.25396825,	4.785185185]]'''
-
+names = ['S1', 'St']  # possibilities: 'OCT-H', 'S1', 'St', 'LDA'
 alphas= [[3,	1,	  1],
         [1,	1,	1],
         [1,	1,	1],
@@ -1598,16 +1594,18 @@ alphas= [[3,	1,	  1],
         [1,	1,	1],
         [50, 21, 10],
         [3, 1,	1]]
-datasets = ['acute-inflammations-1.csv', 'fertility.csv', 'parkinsons.csv', 'spectf80.csv',
+'''datasets = ['acute-inflammations-1.csv', 'fertility.csv', 'parkinsons.csv', 'spectf80.csv',
             'connectionist-bench-sonar.csv', 'ionosphere.csv', 'ThoracicSurgery.csv', 'climate-model-crashes.csv',
-            'banknote-authentication.csv', 'seismic-bumps.csv']
-mipstarts = ['CART', 'OCT']  # possibilities: 'CART', 'OCT'
+            'banknote-authentication.csv', 'seismic-bumps.csv']'''
+datasets=['car.csv', 'contraceptive.csv']
+#'hayes-roth.csv','thyroid-new.csv','teaching.csv',,'seeds.csv','iris.csv','wine.csv', 'balance-scale.csv', 'wall-robot2.csv',
+mipstarts = ['OCT']  # possibilities: 'CART', 'OCT'
 count=-1
 for trainset in datasets:
     count+=1
     for d in depths:
         j = d-2
-        a=alphas[count][j]
+        a=1
         for v in versions:
             df = pd.read_csv(trainset, header=None)
             y = df[0]
@@ -1620,7 +1618,6 @@ for trainset in datasets:
             df2 = scaler.transform(X_train)
             df2 = pd.DataFrame(df2)
             df_test = scaler.transform(X_test)  # apply same transformation to test set
-
             for i in range(len(df_test)):
                 for j in range(len(df_test[0])):
                     if df_test[i][j] > 1:
@@ -1657,7 +1654,7 @@ for trainset in datasets:
                                           relax=1)
                     modello = t.model(df, df2, y_train)
                     modello_relax = t_relax.model(df, df2, y_train)
-                    relaxation = modello_relax.solve(log_output=True)
-                    relaxation_value = relaxation.objective_value
+                    #relaxation = modello_relax.solve(log_output=True)
+                    #relaxation_value = relaxation.objective_value
                     warm = OptimalTree(depth=1, alpha=a, Nmin=N, max_features=F, name=n, dataset=trainset)
-                    ws = warm.test(df, df2, y_train, d, modello, df_test, y_test, None, relaxation_value)
+                    ws = warm.test(df, df2, y_train, d, modello, df_test, y_test, None, 0)

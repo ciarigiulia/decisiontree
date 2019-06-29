@@ -263,13 +263,14 @@ class optimaltree(BaseEstimator):
             mdl.add_constraint(l[i] <= d[self.find_pt()[i + self.depth]])
 
         # vincolo giorgio
+        print('k',self.classes)
         if len(self.classes) <= len(self.Tl):
             for k in range(len(self.classes)):
                 mdl.add_constraint(1 <= mdl.sum(c[k, le + self.floorTb] for le in range(len(self.Tl))))
 
         # vincolo sul massimo numero di foglie associate alle classi
         # mdl.add_constraint(mdl.sum(l[leaf] for leaf in range(len(self.Tl))) == len(self.classes)) #vincolo prof
-        if len(self.classes) > len(self.Tl):
+        if len(self.classes) <= len(self.Tl):
             mdl.add_constraint(mdl.sum(l[leaf] for leaf in range(len(self.Tl))) == len(
                 self.Tl))  # questo è utile se il numero di classi supera il numero di foglie
 
@@ -978,9 +979,9 @@ df_test2 = pd.DataFrame(df_test2)'''
 d = 2
 a = 0.5
 N = 1
-datasets = ['acute-inflammations-1.csv']
+datasets = ['wine.data.csv']
 data = datasets[0]
-mipstarts = ['CART', 'OCT']
+mipstarts = ['OCT']
 for dataset in datasets:
     df = pd.read_csv(dataset, header=None)
     y = df[0]

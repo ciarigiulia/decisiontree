@@ -13,7 +13,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.tree import DecisionTreeClassifier
 from sklearn import tree
-# import graphviz
+import graphviz
 import csv
 
 
@@ -57,7 +57,7 @@ class OptimalTree(BaseEstimator):
         self.bigM = 2
         self.max_features = max_features
 
-        self.csvrow = [0] * 31
+        self.csvrow = [0] * 32
 
     def find_T(self, dataframe, y):
 
@@ -133,7 +133,6 @@ class OptimalTree(BaseEstimator):
             else:
 
                 eps[i] = 1e-5
-        print(eps)
         return eps
 
     def find_epsmax(self, dataframe2):
@@ -299,7 +298,7 @@ class OptimalTree(BaseEstimator):
 
                 for t in self.Tb:
                     mdl.add_constraint(b[t] >= -d[t])
-    
+
                     if len(self.classes) <= len(
                             self.Tl):
                         for k in range(len(self.classes)):
@@ -580,7 +579,7 @@ class OptimalTree(BaseEstimator):
                         mdl.add_constraint(mdl.sum(s[t][f] for f in self.features) <= self.max_features)
                 if self.name == 'S1' or self.name == 'St':
                     mdl.add_constraint(
-                        mdl.sum(s[t][f] for t in self.Tb for f in self.features) <= self.max_features * len(self.Tb))
+                        mdl.sum(s[t][f] for t in self.Tb for f in self.features) == self.max_features * len(self.Tb))
 
             '''elif self.version == 'univariate':
                 for p in range(len(points)):
@@ -704,9 +703,11 @@ class OptimalTree(BaseEstimator):
         clf = DecisionTreeClassifier(max_depth=self.depth, min_samples_leaf=self.Nmin, random_state=1)
         clf.fit(dataframe, y)
 
-        '''dot_data = tree.export_graphviz(clf, out_file=None)
+        dot_data = tree.export_graphviz(clf, out_file=None)
         graph = graphviz.Source(dot_data)
-        graph.render(filename="prova", directory='/Users/giuliaciarimboli/Desktop/laurea magistrale/classification trees/graphs', view=True)'''
+        graph.render(filename="prova",
+                     directory='/Users/giuliaciarimboli/Desktop/laurea magistrale/classification trees/graphs',
+                     view=True)
 
         sk_features = clf.tree_.feature
         sk_b = clf.tree_.threshold
@@ -836,12 +837,14 @@ class OptimalTree(BaseEstimator):
         elif self.version == 'multivariate':
             sol.set_time_limit(
                 300)  # TODO METTERE TIME LIMIT PER LA RISOLUZIONE DEL WARM START DEL MULTIVARIATO CON PROFONDITA 1 (240)
+            print('risolvo cart')
             sol.solve(log_output=True)
             return sol
 
     def find_oct_warmstart(self, dataframe, dataframe2, y):
+
         mod = self.find_cart(dataframe, dataframe2, y)
-        mod.set_time_limit(1800)  # TODO TIME LIMIT PER RISOLVERE IL WARM START OCT CON DEPTH= D-1
+        mod.set_time_limit(600)  # TODO TIME LIMIT PER RISOLVERE IL WARM START OCT CON DEPTH= D-1
         s = mod.solve(log_output=True)
         mod.print_solution()
         self.draw_graph_univariate(s)
@@ -1017,7 +1020,7 @@ class OptimalTree(BaseEstimator):
                 if sol.get_value('c_' + str(k) + '_' + str(leaf)) == 1:
                     g.get_node(leaf).attr['label'] = str(s) + '\\n' + 'class %d' % (k)
         g.layout(prog='dot')
-        g.draw('/Users/giuliaciarimboli/Desktop/%s_%s_%d.pdf' % (self.dataset, self.mipstart, self.depth))
+        g.draw('/Users/giuliaciarimboli/Desktop/%s_%s_%d_N%d.pdf' % (self.dataset, self.mipstart, self.depth, self.Nmin))
 
         return g
 
@@ -1056,7 +1059,7 @@ class OptimalTree(BaseEstimator):
             y_2 = []
             ind = lista_y[t].index
             ind_df = lista_df[t].index
-            if len(lista_y[t]) >= self.Nmin:
+            if len(lista_y[t]) >= self.Nmin * 2:
                 '''for f in self.features:
                     mm.add_var_value('a%d_%d' % (ordine_l[t], f), 0)
                     mm.add_var_value('a_hat%d_%d' % (ordine_l[t], f), 0)
@@ -1175,7 +1178,7 @@ class OptimalTree(BaseEstimator):
             y_2 = []
             ind = lista_y_r[t].index
             ind_df = lista_df_r[t].index
-            if len(lista_y_r[t]) >= self.Nmin:
+            if len(lista_y_r[t]) >= self.Nmin * 2:
 
                 '''for f in self.features:
                     mm.add_var_value('a%d_%d' % (ordine_l[t], f), 0)
@@ -1298,7 +1301,7 @@ class OptimalTree(BaseEstimator):
                     if mm.get_value('a' + str(t) + '_' + str(f)) != 0:
                         coeff.insert(-1, '%.3f' % (mm.get_value('a' + str(t) + '_' + str(f))))
                         feat.insert(-1, f)
-                g.get_node(t).attr['label'] = str(coeff) + '*X' + str(feat) + str('<=') + str(
+                g.get_node(t).attr['label'] = str(coeff) + '*X' + str(feat) + str('<') + str(
                     '%.3f' % (mm.get_value('b_' + str(t))))
             for leaf in Tl:
                 if mm.get_value('l_' + str(leaf)) == 0:  # these leaves haven't got points
@@ -1311,14 +1314,14 @@ class OptimalTree(BaseEstimator):
                     if mm.get_value('c_' + str(k) + '_' + str(leaf)) == 1:
                         g.get_node(leaf).attr['label'] = str(s) + '\\n' + 'class %d' % (classes[k])
             g.layout(prog='dot')
-            g.draw('/Users/giuliaciarimboli/Desktop/WarmStart_%s_%s_%d.pdf' % (self.dataset, self.name, d))
+            g.draw('/Users/giuliaciarimboli/Desktop/WarmStart_%s_%s_%d_F%d_N%d.pdf' % (self.dataset, self.name, d, self.max_features,self.Nmin))
 
         print('la soluzione warm start:', mm)
 
         print(mm.check_as_mip_start())
         modello.add_mip_start(mm)
 
-        modello.set_time_limit(3600)  # TODO TIME LIMIT PER TROVARE SOLUZIONE FINALE MULTIVARIATE
+        modello.set_time_limit(2600)  # TODO TIME LIMIT PER TROVARE SOLUZIONE FINALE MULTIVARIATE
 
         # modello.parameters.emphasis.mip = 4
         self.csvrow[0] = self.dataset
@@ -1391,7 +1394,7 @@ class OptimalTree(BaseEstimator):
                 if modello.solution.get_value('a' + str(t) + '_' + str(f)) != 0:
                     coeff.insert(-1, '%.3f' % (modello.solution.get_value('a' + str(t) + '_' + str(f))))
                     feat.insert(-1, f)
-            g.get_node(t).attr['label'] = str(coeff) + '*X' + str(feat) + str('<=') + str(
+            g.get_node(t).attr['label'] = str(coeff) + '*X' + str(feat) + str('<') + str(
                 '%.3f' % (modello.solution.get_value('b_' + str(t))))
         for leaf in Tl:
             if modello.solution.get_value('l_' + str(leaf)) == 0:  # these leaves haven't got points
@@ -1404,11 +1407,203 @@ class OptimalTree(BaseEstimator):
                 if modello.solution.get_value('c_' + str(k) + '_' + str(leaf)) == 1:
                     g.get_node(leaf).attr['label'] = str(s) + '\\n' + 'class %d' % (classes[k])
         g.layout(prog='dot')
-        g.draw('/Users/giuliaciarimboli/Desktop/solfinale_%s_%s_%d.pdf' % (self.dataset, self.name, d))
+        g.draw('/Users/giuliaciarimboli/Desktop/solfinale_%s_%s_%d_F%d_N%d.pdf' % (self.dataset, self.name, d, self.max_features, self.Nmin))
 
         return a_test, b_test, c_test, train_error
 
-    def test(self, dataframe, dataframe2, y, d, modello, dataframe_test, y_test, warm_start, relaxation_value):
+    def warm_start_univariate(self, dataframe, y, univariate):
+        print('risolvo il modello OCT')
+        clf = DecisionTreeClassifier(max_depth=self.depth, min_samples_leaf=self.Nmin, random_state=1)
+        clf.fit(dataframe, y)
+
+        dot_data = tree.export_graphviz(clf, out_file=None)
+        graph = graphviz.Source(dot_data)
+        graph.render(filename="prova",
+                     directory='/Users/giuliaciarimboli/Desktop/laurea magistrale/classification trees/graphs',
+                     view=True)
+
+        sk_features = clf.tree_.feature
+        sk_b = clf.tree_.threshold
+        sk_val = clf.tree_.value
+        sk_z = clf.apply(df)
+        nodes = np.append(self.Tb, self.Tl)
+        idx = [0]
+        j = 1
+        left = clf.tree_.children_left
+        right = clf.tree_.children_right
+        for i in range(len(clf.tree_.children_left)):
+            if idx[i] >= 0:
+                node = idx[i]
+            if clf.tree_.children_left[node] > 0:
+                idx.insert(j, clf.tree_.children_left[node])
+                j += 1
+            if clf.tree_.children_right[node] > 0:
+                idx.insert(j, clf.tree_.children_right[node])
+                j += 1
+        m = SolveSolution(univariate)
+        count = 0
+        j = -1
+        for node in range(len(sk_features)):
+            j += 1
+            if sk_features[j] >= 0:
+                i = list(idx).index(
+                    j)  # prendo l'indice j-esimo della lista dei nodi di sklearn, equivalente al nodo oct
+                feat = sk_features[j]  # è la feature da prendere nell'i esimo nodo
+
+                m.add_var_value('a%d_%d' % (i, feat), 1)
+                m.add_var_value(('b_%d' % i), sk_b[j])
+                count += 1
+
+        for t in self.Tb:  # len(skval)
+            if t < len(sk_features):
+                if sk_features[t] >= 0:
+                    i = list(idx).index(t)
+                    m.add_var_value(('d_%d' % i), 1)
+        for leaf in self.Tl:
+            m.add_var_value(('l_%d' % leaf), 1)
+
+        jj = -1
+        for node in idx:
+            jj += 1
+            k = np.argmax(sk_val[jj][0])
+            num = np.sum(sk_val[jj][0])
+            ii = list(idx).index(jj)
+            if ii in self.Tl:
+                m.add_var_value('c_%d_%d' % (k, ii), 1)
+                m.add_var_value('Nt_%d' % ii, num)
+                for kl in range(len(self.classes)):
+                    m.add_var_value('Nkt_%d_%d' % (kl, ii), sk_val[jj][0][kl])
+        missing = pow(2, d + 1) - 1 - len(idx)
+        for data in range(len(dataframe)):
+            foglia = list(idx).index(sk_z[data]) + missing
+            m.add_var_value('z_%d_%d' % (data, foglia), 1)
+
+        univariate.add_mip_start(m)
+
+        univariate.set_time_limit(600)  # TODO
+        print('risolvo il modello univariate')
+        univariate.solve(log_output=True)
+        univariate.print_solution()
+
+        mdl = self.model(dataframe, dataframe, y)
+        m = SolveSolution(mdl)
+        points = np.arange(0, len(dataframe))
+        for t in self.Tb:
+            for f in self.features:
+                m.add_var_value('a' + str(t) + '_' + str(f), univariate.solution.get_value('a' + str(t) + '_' + str(f)))
+                m.add_var_value('a_hat' + str(t) + '_' + str(f),
+                                univariate.solution.get_value('a' + str(t) + '_' + str(f)))
+                m.add_var_value('s' + str(t) + '_' + str(f), univariate.solution.get_value('a' + str(t) + '_' + str(f)))
+        for t in self.Tb:
+            m.add_var_value('b_' + str(t), univariate.solution.get_value('b_' + str(t)))
+            m.add_var_value('d_' + str(t), univariate.solution.get_value('d_' + str(t)))
+        for leaf in self.Tl:
+            m.add_var_value('l_' + str(leaf), univariate.solution.get_value('l_' + str(leaf)))
+            m.add_var_value('Nt_' + str(leaf), univariate.solution.get_value('Nt_' + str(leaf)))
+            m.add_var_value('L_' + str(leaf), univariate.solution.get_value('L_' + str(leaf)))
+
+            for k in range(len(self.classes)):
+                m.add_var_value('c_' + str(k) + '_' + str(leaf),
+                                univariate.solution.get_value('c_' + str(k) + '_' + str(leaf)))
+                m.add_var_value('Nkt_' + str(k) + '_' + str(leaf),
+                                univariate.solution.get_value('Nkt_' + str(k) + '_' + str(leaf)))
+        for n in points:
+            for leaf in self.Tl:
+                m.add_var_value('z_' + str(n) + '_' + str(leaf),
+                                univariate.solution.get_value('z_' + str(n) + '_' + str(leaf)))
+        mdl.add_mip_start(m)
+        mdl.set_time_limit(3600)
+        sol = mdl.solve(log_output=True)
+        T = pow(2, (d + 1)) - 1  # nodes number
+        floorTb = int(floor(T / 2))  # number of branch nodes
+        Tb = np.arange(0, floorTb)  # range branch nodes
+        Tl = np.arange(floorTb, T)  # range leaf nodes
+        classes = np.unique(y.values) # possible labels of classification
+        train_error = 0
+        for leaf in Tl:
+            train_error += sol.get_value('L_' + str(leaf))
+        train_error = train_error / len(y)
+        print('train_error:', train_error)
+        a_test = [] * len(self.features)
+        b_test = []
+        c_test = []
+        for t in Tb:
+            a_list = []
+            b_test.insert(t, sol.get_value('b_%d' % t))
+            for f in self.features:
+                a_list.insert(f, sol.get_value('a%d_%d' % (t, f)))
+            a_test.append(a_list)
+        for leaf in Tl:
+            c_list = []
+            for k in range(len(classes)):
+                c_list.insert(leaf, sol.get_value('c_%d_%d' % (k, leaf)))
+            c_test.append(c_list)
+        # GRAPH
+        g = pgv.AGraph(directed=True)  # initialize the graph
+
+        nodes = np.append(Tb, Tl)
+        for n in nodes:  # the graph has a node for eache node of the tree
+            g.add_node(n, shape='circle', size=8)
+
+            if n != 0:
+                father = ceil(n / 2) - 1
+                g.add_edge(father, n)
+
+        for t in Tb:
+            coeff = []
+            feat = []
+            # if mdl.solution.get_value('d_' + str(t))==0:
+            # g.get_node(t).attr['color']='red'
+            for f in range(len(self.features)):
+                if mdl.solution.get_value('a' + str(t) + '_' + str(f)) != 0:
+                    coeff.insert(-1, '%.3f' % (mdl.solution.get_value('a' + str(t) + '_' + str(f))))
+                    feat.insert(-1, f)
+            g.get_node(t).attr['label'] = str(coeff) + '*X' + str(feat) + str('<') + str(
+                '%.3f' % (mdl.solution.get_value('b_' + str(t))))
+        for leaf in Tl:
+            if mdl.solution.get_value('l_' + str(leaf)) == 0:  # these leaves haven't got points
+                g.get_node(leaf).attr['color'] = 'red'
+        for leaf in Tl:
+            s = []
+            for k in range(len(classes)):
+                s.append(round(mdl.solution.get_value('Nkt_' + str(k) + '_' + str(leaf))))
+            for k in range(len(classes)):
+                if mdl.solution.get_value('c_' + str(k) + '_' + str(leaf)) == 1:
+                    g.get_node(leaf).attr['label'] = str(s) + '\\n' + 'class %d' % (classes[k])
+        g.layout(prog='dot')
+        g.draw('/Users/giuliaciarimboli/Desktop/solfinale_%s_%s_%d_F%d_N%d.pdf' % (self.dataset, self.name, d, self.max_features, self.Nmin))
+
+        self.csvrow[0] = self.dataset
+        self.csvrow[2] = len(self.features)
+        self.csvrow[3] = self.version
+        self.csvrow[4] = self.name
+        self.csvrow[5] = d
+        self.csvrow[6] = len(Tb)
+        self.csvrow[7] = len(Tl)
+        self.csvrow[10] = mdl.number_of_variables
+        self.csvrow[11] = mdl.number_of_binary_variables
+        self.csvrow[12] = mdl.number_of_continuous_variables
+        self.csvrow[13] = mdl.number_of_constraints
+
+        activenodes = 0
+        activeleaves = 0
+        for t in range(len(Tb)):
+            if sol.get_value('d_%d' % t) == 1:
+                activenodes += 1
+        for leaf in Tl:
+            if sol.get_value('l_%d' % leaf) == 1:
+                activeleaves += 1
+        self.csvrow[8] = activenodes
+        self.csvrow[9] = activeleaves
+        self.csvrow[24] = int(sol.solve_details.time)
+
+        self.csvrow[25] = sol.solve_details.mip_relative_gap
+        self.csvrow[26] = '?'  # Cplex.get_dettime()
+        self.csvrow[27] = sol.objective_value
+
+        return a_test, b_test, c_test, train_error
+
+    def test(self, dataframe, dataframe2, y, d, modello, dataframe_test, y_test, warm_start, relaxation_value, univariate):
 
         T = pow(2, (d + 1)) - 1  # nodes number
         floorTb = int(floor(T / 2))  # number of branch nodes
@@ -1417,13 +1612,14 @@ class OptimalTree(BaseEstimator):
         classes = np.unique(y.values)  # possible labels of classification
 
         if self.version == 'multivariate':
-            a_test, b_test, c_test, train_error = self.fit_multivariate(dataframe, dataframe2, y, d, modello)
-
+            #a_test, b_test, c_test, train_error = self.fit_multivariate(dataframe, dataframe2, y, d, modello)
+            a_test, b_test, c_test, train_error = self.warm_start_univariate(dataframe, y, univariate)
         elif self.version == 'univariate':
             if self.mipstart == 'CART':
                 a_test, b_test, c_test, train_error = self.fit_with_cart(dataframe, dataframe2, y)
             else:
                 a_test, b_test, c_test, train_error = self.fit_with_oct_mip_start(dataframe, dataframe2, y, warm_start)
+
         ''' leaves = []
         prediction = []
         apply = np.zeros((len(dataframe_test), d + 1), dtype=np.int8)
@@ -1505,6 +1701,7 @@ class OptimalTree(BaseEstimator):
         self.csvrow[28] = relaxation_value
         self.csvrow[29] = self.max_features
         self.csvrow[30] = self.alpha
+        self.csvrow[31] = self.Nmin
 
         print('train')
         print(apply_train)
@@ -1590,42 +1787,45 @@ class OptimalTree(BaseEstimator):
             writer = csv.writer(csvfile)
             writer.writerow(self.csvrow)
         return
-    
-    
 
-def divide_train_and_test(X,y, splitPercentage, stratify = None):    
+
+def divide_train_and_test(X, y, splitPercentage, stratify=None):
     if stratify == None:
-        xTrain, xTest, yTrain, yTest = train_test_split(X, y, test_size=1-splitPercentage, random_state=42, stratify = stratify)
+        xTrain, xTest, yTrain, yTest = train_test_split(X, y, test_size=1 - splitPercentage, random_state=42,
+                                                        stratify=stratify)
     else:
-        xTrain, xTest, yTrain, yTest = train_test_split(X, y, test_size=1-splitPercentage, random_state=42, stratify = y)
+        xTrain, xTest, yTrain, yTest = train_test_split(X, y, test_size=1 - splitPercentage, random_state=42,
+                                                        stratify=y)
     return xTrain, yTrain, xTest, yTest
 
+
 def from_regression_to_class(yRegr, bins, labels):
-    yClass = yRegr.reshape(-1,)
-    y = np.asarray(pd.cut(yClass, bins = bins, labels = labels))
-    y = y.reshape(-1,1)
+    yClass = yRegr.reshape(-1, )
+    y = np.asarray(pd.cut(yClass, bins=bins, labels=labels))
+    y = y.reshape(-1, 1)
     return y
+
+
 np.random.seed(8)
 
-df = pd.read_excel('Neurologici_Nuovi.xlsx')
+df = pd.read_excel('Ortopedici_Nuovi.xlsx')
 
 y = df["COD_80"]
-y = y.values.reshape(-1,1)
-X = df.drop(columns = ["COD_80"])
+y = y.values.reshape(-1, 1)
+X = df.drop(columns=["COD_80"])
 X = X.values
 threshold = 80
-print(np.sum(y>=threshold))
-print(np.sum(y<threshold))
+print(np.sum(y >= threshold))
+print(np.sum(y < threshold))
 
 bins = [0, threshold, 101]
-labels = [0,1]
+labels = [0, 1]
 y = from_regression_to_class(y, bins, labels)
 
-
 splitPercentage = 0.7
-xTrain, yTrain, xTest, yTest = divide_train_and_test(X,y, splitPercentage, stratify = None)
-xTrain=pd.DataFrame(xTrain)
-xTest=pd.DataFrame(xTest)
+xTrain, yTrain, xTest, yTest = divide_train_and_test(X, y, splitPercentage, stratify=None)
+xTrain = pd.DataFrame(xTrain)
+xTest = pd.DataFrame(xTest)
 scaler = MinMaxScaler()
 df_scaled = scaler.fit(xTrain)
 df = scaler.transform(xTrain)
@@ -1633,8 +1833,8 @@ df = pd.DataFrame(df)
 df2 = scaler.transform(xTrain)
 df2 = pd.DataFrame(df2)
 df_test = scaler.transform(xTest)  # apply same transformation to test set
-yTest=pd.DataFrame(yTest)
-yTrain=pd.DataFrame(yTrain)
+yTest = pd.DataFrame(yTest)
+yTrain = pd.DataFrame(yTrain)
 
 for i in range(len(df_test)):
     for j in range(len(df_test[0])):
@@ -1642,25 +1842,121 @@ for i in range(len(df_test)):
             df_test[i][j] = 1
         elif df_test[i][j] < 0:
             df_test[i][j] = 0
-df_test = pd.DataFrame(df_test)
-print(len(df))
-d = 2
-N = 1  # int(3 / 100 * (len(df) + len(df_test)))
-F = 8  # len(df.columns)
-names= ['LDA', 'S1', 'St']
-a = 3
-v = 'multivariate'
-trainset= 'neurologici'
-for n in names:
-    if names != 'OCT-H' or names!= 'LDA':
-        print('RISOLVO IL MODELLO %s %s PER IL DATASET %s CON PROFONDITA %d' % (v, n, trainset, d))
-        t = OptimalTree(depth=d, Nmin=N, alpha=a, max_features=F, version=v, name=n, dataset=trainset)
-        modello = t.model(df, df2, yTrain)
-        warm = OptimalTree(depth=1, alpha=a, Nmin=N, max_features=F, name=n, dataset=trainset)
-        ws = warm.test(df, df2, yTrain, d, modello, df_test, yTest, None, 0)
-    else:
-        t = OptimalTree(depth=d, Nmin=N, alpha=a, max_features=-1, version=v, name=n, dataset=trainset)
-        modello = t.model(df, df2, yTrain)
-        warm = OptimalTree(depth=1, alpha=a, Nmin=N, max_features=1, name=n, dataset=trainset)
-        ws = warm.test(df, df2, yTrain, d, modello, df_test, yTest, None, 0)
 
+df_test = pd.DataFrame(df_test)
+
+#non cancellare- poi serve per fare orto.
+d = 1
+trainset = 'orto'
+a = 0.5
+N = 20
+f= [2]
+for F in f:
+    name = 'St'
+    warm = OptimalTree(depth=d, alpha=a, Nmin= N, max_features=F, version='univariate', name=None, dataset=trainset, mipstart='CART', relax=0)
+    uni = warm.model(df, df2, yTrain)
+    test = OptimalTree(depth=d, alpha=a, Nmin= N, max_features=F, version='multivariate', name='St', dataset=trainset, mipstart=None, relax=0)
+    modello = test.model(df, df2, yTrain)
+    fit = test.test(df, df2, yTrain, d, modello, df_test, yTest, None, 0, uni)
+
+
+
+
+'''depths=[2]
+N=[20]
+v='univariate'
+M=['CART', 'OCT']
+trainset= 'orto'
+a=0.5
+for d in depths:
+    for n in N:
+        for m in M:
+            t = OptimalTree(depth=d, alpha=a, Nmin=n, version=v, mipstart=m, dataset=trainset, relax=0)
+            t_relax = OptimalTree(depth=d, alpha=a, Nmin=n, version=v, mipstart=m, dataset=trainset,
+                                  relax=1)
+            print('RISOLVO IL MODELLO %s CON WARM START %s PER IL DATASET %s CON PROFONDITA %d' % (
+                v, m, trainset, d))
+            if m == 'CART':
+                relaxation_value = 0
+                f2 = t.test(df, df2, yTrain, d, None, df_test, yTest, None, relaxation_value,None)
+            elif m == 'OCT':
+                print('RISOLVO IL MODELLO %s CON WARM START %s PER IL DATASET %s CON PROFONDITA %d' % (v, m, trainset, d))
+                warm = OptimalTree(depth=d - 1, alpha=a, Nmin=n, version=v, mipstart=m, dataset=trainset)
+                relaxation_value = 0
+                ws_ = warm.find_oct_warmstart(df, df2, yTrain)
+                f = t.test(df, df2, yTrain, d, None, df_test, yTest, ws_, relaxation_value, None)'''
+
+
+
+
+'''for d in D:
+    for F in f:
+
+        name = 'St'
+        warm = OptimalTree(d, a, N, F, 'univariate', None, trainset, 'CART', 0)
+        uni = warm.model(df, df2, yTrain)
+        test = OptimalTree(d, a, N, F, 'multivariate', name, trainset, None, 0)
+        modello = test.model(df, df2, yTrain)
+        fit = test.test(df, df2, yTrain, d, modello, df_test, yTest, None, 0, uni)
+        if d !=1:
+            name='S1'
+            test = OptimalTree(d, a, N, F, 'multivariate', name, trainset, None, 0)
+            modello = test.model(df, df2, yTrain)
+            fit2 = test.test(df, df2, yTrain, d, modello, df_test, yTest, None, 0, uni)'''
+
+'''for d in depths:
+    for n in N:
+        t = OptimalTree(depth=d, alpha=a, Nmin=n, version=v, mipstart=m, dataset=trainset, relax=0)
+        t_relax = OptimalTree(depth=d, alpha=a, Nmin=n, version=v, mipstart=m, dataset=trainset,
+                              relax=1)
+        print('RISOLVO IL MODELLO %s CON WARM START %s PER IL DATASET %s CON PROFONDITA %d' % (
+            v, m, trainset, d))
+        if m == 'CART':
+            relaxation_value = 0
+            f2 = t.test(df, df2, yTrain, d, None, df_test, yTest, None, relaxation_value)'''
+
+'''depths = [2,3,4]
+N = [10,50,100] 
+f = [2,3,4]  # len(df.columns)
+a = 3
+v = 'univariate'
+trainset= 'neurologici'
+mipstarts=['CART']
+
+for d in depths:
+    for n in N:
+        t = OptimalTree(depth=d, alpha=a, Nmin=n, version=v, mipstart=m, dataset=trainset, relax=0)
+        t_relax = OptimalTree(depth=d, alpha=a, Nmin=n, version=v, mipstart=m, dataset=trainset,
+                              relax=1)
+        print('RISOLVO IL MODELLO %s CON WARM START %s PER IL DATASET %s CON PROFONDITA %d' % (
+            v, m, trainset, d))
+        if m == 'CART':
+            relax_model = t_relax.model(df, df2, yTrain)
+            relaxation = relax_model.solve(log_output=True)
+            relaxation_value = relaxation.objective_value
+            f2 = t.test(df, df2, yTrain, d, None, df_test, yTest, None, relaxation_value)
+        elif m == 'OCT':
+            warm = OptimalTree(depth=d - 1, alpha=a, Nmin=N, version=v, mipstart=m, dataset=trainset)
+            relax_model = t_relax.model(df, df2, yTrain)
+            relaxation = relax_model.solve(log_output=True)
+            relaxation_value = relaxation.objective_value
+            ws_ = warm.find_oct_warmstart(df, df2, y_train)
+            f = t.test(df, df2, yTrain, d, None, df_test, yTest, ws_, relaxation_value)
+v='multivariate'
+names= ['S1', 'St']
+for d in depths:
+    for n in names:
+        if names != 'OCT-H' or names!= 'LDA':
+            for F in f:
+                N=10
+                print('RISOLVO IL MODELLO %s %s PER IL DATASET %s CON PROFONDITA %d' % (v, n, trainset, d))
+                t = OptimalTree(depth=d, Nmin=N, alpha=a, max_features=F, version=v, name=n, dataset=trainset)
+                modello = t.model(df, df2, yTrain)
+                warm = OptimalTree(depth=1, alpha=a, Nmin=N, max_features=F, version='univariate', name=n, dataset=trainset)
+                ws = warm.test(df, df2, yTrain, d, modello, df_test, yTest, None, 0)
+        else:
+            for Nm in N:
+                t = OptimalTree(depth=d, Nmin=Nm, alpha=a, max_features=-1, version=v, name=n, dataset=trainset)
+                modello = t.model(df, df2, yTrain)
+                warm = OptimalTree(depth=1, alpha=a, Nmin=Nm, max_features=1, name=n, dataset=trainset)
+                ws = warm.test(df, df2, yTrain, d, modello, df_test, yTest, None, 0)'''
